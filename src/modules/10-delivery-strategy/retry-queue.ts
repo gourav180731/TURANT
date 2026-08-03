@@ -77,7 +77,16 @@ export async function runRetryQueue(
       return { retried, gaveUpExpired: remaining, exhaustedRetries: 0, finalFailures: [] };
     }
 
-    if (round > 1) await sleep(policy.retryIntervalMs);
+    if (round > 1) {
+      await sleep(policy.retryIntervalMs);
+      // Re-check after the wait: the alert may have expired during the backoff,
+      // and an expired alert must never be retried (requirement #6).
+      if (!guard.canSubmit()) {
+        const remaining = pending.length;
+        logger.warn({ round, remaining }, 'retry.halt_expired_during_backoff');
+        return { retried, gaveUpExpired: remaining, exhaustedRetries: 0, finalFailures: [] };
+      }
+    }
 
     logger.info({ round, count: pending.length }, 'retry.round');
     const results = await submit(pending);

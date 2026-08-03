@@ -24,6 +24,7 @@
 
 import http from 'k6/http';
 import { check, sleep } from 'k6';
+import { Counter, Trend } from 'k6/metrics';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
 const CAP_XML_FILE = __ENV.CAP_XML_FILE || './fixtures/cap.xml';

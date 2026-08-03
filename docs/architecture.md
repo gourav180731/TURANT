@@ -31,7 +31,10 @@
 10. **Delivery strategy (10)** — single-attempt or retry, configurable.
 11. **DLR (11)** — `deliver_sm` receipts → per-alert delivered/failed counts.
 12. **EWS callback (12)** — completion report (see consistency rule below).
-13. **Parallel (13)** — `worker_threads` fan-out for batches/alerts.
+13. **Parallel (13)** — real `worker_threads` fan-out (default) or in-process
+    `inline` mode; a fixed pool ≤ `PARALLEL_WORKER_COUNT` reuses and terminates
+    workers. The CAP `expires` is threaded into every worker as `expiresAtIso`,
+    so expiry-gated submission + retry halting behave identically in both modes.
 
 ## Invariant: submitted == successful push
 

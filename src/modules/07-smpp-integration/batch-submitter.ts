@@ -7,8 +7,7 @@ import type { SmppPriorityFlag } from '../09-priority/priority.js';
 import { earlyWarningPriorityFlag } from '../09-priority/priority.js';
 import type { DeliveryPolicy } from '../10-delivery-strategy/delivery-policy.js';
 import { runRetryQueue } from '../10-delivery-strategy/retry-queue.js';
-import { getSmppSession } from './smpp-session.js';
-import { SmppClient } from './smpp-client.js';
+import { createSmppClient, getSmppSession } from './smpp-session.js';
 
 const logger = getLogger();
 
@@ -19,12 +18,21 @@ const logger = getLogger();
  * (validity_period) + module 09 (priority_flag) fields, submits through the
  * shared SMPP client, then applies module 10's retry policy to whatever was
  * not accepted.
+ *
+ * The real CAP expiry is threaded in as `expiresAt` (or via a pre-built
+ * `guard`); every retry round consults it (requirement #6 end-to-end), so
+ * retries halt the moment the alert expires — never retry an expired alert.
  */
 
 export interface SubmitAlertOptions {
   cfg?: ParsedEnvConfig;
   policy?: DeliveryPolicy;
   guard?: ExpiryGuard;
+  /**
+   * Real CAP `expires` timestamp (from `capTiming(alert).expiresAt`). Used to
+   * build the guard when `guard` is not supplied. `null` = no expiry declared.
+   */
+  expiresAt?: Date | null;
   traceKey?: string;
 }
 
@@ -62,6 +70,12 @@ export interface AlertSubmitSummary {
   results: SubmissionResult[];
 }
 
+/** Resolve the guard for a submission: explicit guard wins, else from expiresAt. */
+export function resolveGuard(opts: Pick<SubmitAlertOptions, 'guard' | 'expiresAt'>): ExpiryGuard {
+  if (opts.guard) return opts.guard;
+  return new ExpiryGuard({ expiresAt: opts.expiresAt ?? null });
+}
+
 /**
  * Submit a whole alert to a batch of recipients. Returns a real summary; when
  * SMPP credentials are absent it returns a clearly-labelled awaiting-credentials
@@ -75,7 +89,7 @@ export async function submitAlertBatch(
 ): Promise<AlertSubmitSummary> {
   const cfg = opts.cfg ?? loadConfig();
   const policy = opts.policy ?? { strategy: cfg.DELIVERY_STRATEGY, retryMax: cfg.DELIVERY_RETRY_MAX, retryIntervalMs: cfg.DELIVERY_RETRY_INTERVAL_MS };
-  const guard = opts.guard ?? new ExpiryGuard({ expiresAt: null });
+  const guard = resolveGuard(opts);
 
   const empty = (awaitingCredentials: boolean): AlertSubmitSummary => ({
     total: msisdns.length,
@@ -92,7 +106,7 @@ export async function submitAlertBatch(
   // A caller-supplied cfg builds its own client (tests isolate their env); the
   // default path shares the process-wide session so DLR correlation stays on
   // one connection.
-  const session = opts.cfg ? new SmppClient(cfg) : getSmppSession(cfg);
+  const session = opts.cfg ? createSmppClient(cfg) : getSmppSession(cfg);
   if (!session.isConfigured()) {
     logger.warn({ alertId, count: msisdns.length }, 'submit.awaiting_credentials');
     return empty(true);
@@ -138,4 +152,69 @@ export async function submitAlertBatch(
   };
   logger.info({ alertId, ...summary }, 'submit.completed');
   return summary;
+}
+
+/** Split a worker's slice into SUBMIT_BATCH_SIZE chunks. */
+export function chunkBatch(batch: readonly string[], batchSize = 500): string[][] {
+  const chunks: string[][] = [];
+  for (let i = 0; i < batch.length; i += batchSize) {
+    chunks.push(batch.slice(i, i + batchSize));
+  }
+  return chunks;
+}
+
+/**
+ * Chunked submission for a whole batch (module 13 workers and the inline
+ * executor both use this). Consults the real expiry guard before every chunk
+ * and merges per-chunk summaries. `total` counts only chunks actually
+ * submitted; chunks skipped by expiry are excluded and reflected nowhere in
+ * the accepted/rejected figures (the pipeline halts loudly instead).
+ */
+export async function submitAlertBatchChunked(
+  alertId: string,
+  content: string,
+  msisdns: readonly string[],
+  opts: SubmitAlertOptions = {},
+): Promise<AlertSubmitSummary> {
+  const cfg = opts.cfg ?? loadConfig();
+  const guard = resolveGuard(opts);
+  let merged: AlertSubmitSummary = emptySubmitSummary();
+
+  for (const chunk of chunkBatch(msisdns, cfg.SUBMIT_BATCH_SIZE)) {
+    if (!guard.canSubmit()) {
+      logger.warn({ alertId, chunk: chunk.length }, 'submit.chunk_halt_expired');
+      break;
+    }
+    const summary = await submitAlertBatch(alertId, content, chunk, { ...opts, cfg, guard });
+    merged = mergeSubmitSummaries(merged, summary);
+  }
+  return merged;
+}
+
+function emptySubmitSummary(): AlertSubmitSummary {
+  return {
+    total: 0,
+    accepted: 0,
+    rejected: 0,
+    failed: 0,
+    retried: 0,
+    gaveUpExpired: 0,
+    exhaustedRetries: 0,
+    awaitingCredentials: false,
+    results: [],
+  };
+}
+
+function mergeSubmitSummaries(a: AlertSubmitSummary, b: AlertSubmitSummary): AlertSubmitSummary {
+  return {
+    total: a.total + b.total,
+    accepted: a.accepted + b.accepted,
+    rejected: a.rejected + b.rejected,
+    failed: a.failed + b.failed,
+    retried: a.retried + b.retried,
+    gaveUpExpired: a.gaveUpExpired + b.gaveUpExpired,
+    exhaustedRetries: a.exhaustedRetries + b.exhaustedRetries,
+    awaitingCredentials: a.awaitingCredentials || b.awaitingCredentials,
+    results: [...a.results, ...b.results],
+  };
 }

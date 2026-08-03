@@ -29,6 +29,7 @@ const BIND_MODES = ['transceiver', 'transmitter'] as const;
 const DELIVERY_STRATEGIES = ['single-attempt', 'retry'] as const;
 const DATA_CODINGS = ['7bit', 'ucs2'] as const;
 const LOOKUP_MODES = ['live', 'prefetched'] as const;
+const PARALLEL_MODES = ['threads', 'inline'] as const;
 
 export const envSchema = z.object({
   // ---- Application ----
@@ -125,6 +126,11 @@ export const envSchema = z.object({
   // ---- Parallel processing ----
   PARALLEL_WORKER_COUNT: intFromEnvNonZero(4),
   SUBMIT_BATCH_SIZE: intFromEnvNonZero(500),
+  /**
+   * `threads` (default) = real OS worker_threads (module 13). `inline` = run
+   * the same pipeline in-process (local dev/debugging, no extra threads).
+   */
+  PARALLEL_EXECUTION_MODE: z.enum(PARALLEL_MODES).default('threads'),
 
   // ---- Latency tracing ----
   /** Hours a per-alert trace record is retained (in memory + Redis). */

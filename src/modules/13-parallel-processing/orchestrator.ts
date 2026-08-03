@@ -1,22 +1,59 @@
 import { loadConfig, type ParsedEnvConfig } from '../../config/env.js';
+import { capTiming } from '../01-cap-ingestion/cap-parser.js';
 import type { CapAlert } from '../../types/cap.js';
 import { getLogger } from '../../utils/logger.js';
-import { ExpiryGuard, expiryGuardForAlert } from '../06-expiry-control/expiry-guard.js';
+import { ExpiryGuard } from '../06-expiry-control/expiry-guard.js';
 import type { AlertSubmitSummary } from '../07-smpp-integration/batch-submitter.js';
-import { submitAlertBatch } from '../07-smpp-integration/batch-submitter.js';
+import { chunkBatch, submitAlertBatchChunked } from '../07-smpp-integration/batch-submitter.js';
+import { WorkerPoolExecutor } from './worker-pool-executor.js';
+import type { WorkerJob } from './types.js';
 
 const logger = getLogger();
+
+export { chunkBatch };
 
 /**
  * Parallel processing framework — requirement #13.
  *
- * The orchestrator splits the deduplicated MSISDN list into
- * PARALLEL_WORKER_COUNT batches, processes them concurrently (worker_threads in
- * production, injectable executor in tests), and merges the per-batch submit
- * summaries back into a single per-alert result. Batches are further chunked to
- * SUBMIT_BATCH_SIZE inside each worker. All batches share one trace key so the
- * per-alert latency timeline stays coherent across workers.
+ * The orchestrator splits the deduplicated MSISDN list into batches (at most
+ * PARALLEL_WORKER_COUNT) and dispatches each to an executor. The default
+ * executor is a real worker_threads pool (`PARALLEL_EXECUTION_MODE=threads`):
+ * every batch submits inside its own OS thread. `PARALLEL_EXECUTION_MODE=inline`
+ * (or an explicit `executor`) runs the identical pipeline in-process.
+ *
+ * The real CAP expiry is threaded into every job as `expiresAtIso` (from
+ * `capTiming(alert)`), so both the worker threads and the inline path build the
+ * same real expiry guard — requirement #6 holds end-to-end, including retries.
  */
+
+/** Executor contract: one job (a whole worker slice) → one merged summary. */
+export type BatchExecutor = (job: WorkerJob) => Promise<AlertSubmitSummary>;
+
+export interface OrchestrateOptions {
+  alert: CapAlert;
+  content: string;
+  msisdns: readonly string[];
+  cfg?: ParsedEnvConfig;
+  traceKey?: string;
+  /** Override the executor (tests / advanced wiring). Defaults by mode. */
+  executor?: BatchExecutor;
+}
+
+export interface OrchestrateResult {
+  capIdentifier: string;
+  batches: number;
+  summaries: AlertSubmitSummary[];
+  aggregate: {
+    total: number;
+    accepted: number;
+    rejected: number;
+    failed: number;
+    retried: number;
+    gaveUpExpired: number;
+    exhaustedRetries: number;
+    awaitingCredentials: boolean;
+  };
+}
 
 /** Split `msisdns` into at most `workerCount` batches, each ≤ `maxBatchSize`. */
 export function splitBatches(
@@ -40,80 +77,52 @@ export function splitBatches(
   return batches;
 }
 
-/** Split one worker's slice into SUBMIT_BATCH_SIZE chunks. */
-export function chunkBatch(batch: readonly string[], batchSize = 500): string[][] {
-  const chunks: string[][] = [];
-  for (let i = 0; i < batch.length; i += batchSize) {
-    chunks.push(batch.slice(i, i + batchSize));
-  }
-  return chunks;
-}
-
-export interface OrchestrateOptions {
-  alert: CapAlert;
-  content: string;
-  msisdns: readonly string[];
-  cfg?: ParsedEnvConfig;
-  traceKey?: string;
-  /**
-   * Executor for one worker's whole slice (defaults to in-process
-   * submitAlertBatch; production may supply the worker_threads executor).
-   */
-  executor?: (batch: readonly string[]) => Promise<AlertSubmitSummary>;
-}
-
-export interface OrchestrateResult {
-  capIdentifier: string;
-  batches: number;
-  summaries: AlertSubmitSummary[];
-  aggregate: {
-    total: number;
-    accepted: number;
-    rejected: number;
-    failed: number;
-    retried: number;
-    gaveUpExpired: number;
-    awaitingCredentials: boolean;
-  };
-}
-
-/** Default in-process executor: real submission through module 07. */
-export async function defaultExecutor(batch: readonly string[]): Promise<AlertSubmitSummary> {
-  const cfg = loadConfig();
-  const guard = new ExpiryGuard({ expiresAt: null });
-  return submitAlertBatch('unknown', '', batch, { cfg, guard });
+/**
+ * In-process executor: real submission through module 07, chunked and gated by
+ * the real CAP expiry carried in the job (`expiresAtIso`).
+ */
+export async function inlineExecutor(
+  job: WorkerJob,
+  cfg: ParsedEnvConfig = loadConfig(),
+): Promise<AlertSubmitSummary> {
+  const guard = new ExpiryGuard({ expiresAt: job.expiresAtIso ? new Date(job.expiresAtIso) : null });
+  return submitAlertBatchChunked(job.alertId, job.content, job.batch, {
+    cfg,
+    guard,
+    traceKey: job.traceKey ?? job.capIdentifier,
+  });
 }
 
 /**
- * Run one alert's dissemination: split → process concurrently → merge.
- * Each worker slice is further chunked to SUBMIT_BATCH_SIZE, and the expiry
- * guard is consulted per chunk so the alert can halt mid-pipeline.
+ * Run one alert's dissemination: split → dispatch batches to a real
+ * worker_threads pool (default) or the inline executor → merge.
  */
 export async function orchestrateAlertPipeline(opts: OrchestrateOptions): Promise<OrchestrateResult> {
   const cfg = opts.cfg ?? loadConfig();
   const alertId = opts.alert.identifier;
   const traceKey = opts.traceKey ?? opts.alert.identifier;
-  const executor = opts.executor ?? defaultExecutor;
-  const guard = expiryGuardForAlert(opts.alert);
+
+  const timing = capTiming(opts.alert);
+  const expiresAtIso = timing.expiresAt ? timing.expiresAt.toISOString() : null;
 
   const batches = splitBatches(opts.msisdns, cfg.PARALLEL_WORKER_COUNT, cfg.SUBMIT_BATCH_SIZE);
-  const summaries = await Promise.all(
-    batches.map(async (batch) => {
-      const chunks = chunkBatch(batch, cfg.SUBMIT_BATCH_SIZE);
-      let merged = await emptySummary(alertId, 0, false);
-      for (const chunk of chunks) {
-        if (!guard.canSubmit()) {
-          logger.warn({ alertId, chunk: chunk.length }, 'pipeline.halt_expired');
-          break;
-        }
-        const chunkMessages = chunk;
-        // Delegate the actual submit so SMPP credentials are read in the worker.
-        const summary = await executor(chunkMessages);
-        merged = mergeSummaries(merged, summary);
-      }
-      return merged;
-    }),
-  );
+  const jobs: WorkerJob[] = batches.map((batch) => ({
+    alertId,
+    capIdentifier: traceKey,
+    content: opts.content,
+    batch,
+    expiresAtIso,
+    traceKey,
+  }));
+
+  let summaries: AlertSubmitSummary[];
+  if (opts.executor) {
+    summaries = await Promise.all(jobs.map((job) => opts.executor!(job)));
+  } else if (cfg.PARALLEL_EXECUTION_MODE === 'threads') {
+    summaries = await runBatchesInThreads(jobs, cfg);
+  } else {
+    summaries = await Promise.all(jobs.map((job) => inlineExecutor(job, cfg)));
+  }
 
   const aggregate = summaries.reduce<OrchestrateResult['aggregate']>(
     (acc, s) => ({
@@ -123,39 +132,50 @@ export async function orchestrateAlertPipeline(opts: OrchestrateOptions): Promis
       failed: acc.failed + s.failed,
       retried: acc.retried + s.retried,
       gaveUpExpired: acc.gaveUpExpired + s.gaveUpExpired,
+      exhaustedRetries: acc.exhaustedRetries + s.exhaustedRetries,
       awaitingCredentials: acc.awaitingCredentials || s.awaitingCredentials,
     }),
-    { total: 0, accepted: 0, rejected: 0, failed: 0, retried: 0, gaveUpExpired: 0, awaitingCredentials: false },
+    { total: 0, accepted: 0, rejected: 0, failed: 0, retried: 0, gaveUpExpired: 0, exhaustedRetries: 0, awaitingCredentials: false },
   );
 
-  logger.info({ capIdentifier: traceKey, batches: batches.length, ...aggregate }, 'pipeline.completed');
+  logger.info(
+    { capIdentifier: traceKey, mode: cfg.PARALLEL_EXECUTION_MODE, batches: batches.length, ...aggregate },
+    'pipeline.completed',
+  );
   return { capIdentifier: traceKey, batches: batches.length, summaries, aggregate };
 }
 
-async function emptySummary(alertId: string, total: number, awaitingCredentials: boolean): Promise<AlertSubmitSummary> {
-  return {
-    total,
-    accepted: 0,
-    rejected: 0,
-    failed: 0,
-    retried: 0,
-    gaveUpExpired: 0,
-    exhaustedRetries: 0,
-    awaitingCredentials,
-    results: [],
-  };
-}
-
-function mergeSummaries(a: AlertSubmitSummary, b: AlertSubmitSummary): AlertSubmitSummary {
-  return {
-    total: a.total + b.total,
-    accepted: a.accepted + b.accepted,
-    rejected: a.rejected + b.rejected,
-    failed: a.failed + b.failed,
-    retried: a.retried + b.retried,
-    gaveUpExpired: a.gaveUpExpired + b.gaveUpExpired,
-    exhaustedRetries: a.exhaustedRetries + b.exhaustedRetries,
-    awaitingCredentials: a.awaitingCredentials || b.awaitingCredentials,
-    results: [...a.results, ...b.results],
-  };
+/**
+ * Dispatch every job to one shared worker_threads pool and shut it down
+ * afterwards (no thread leak). A worker that fails a job becomes a
+ * failed-summary so the rest of the alert is not aborted and the report is
+ * honest about the failure.
+ */
+async function runBatchesInThreads(jobs: readonly WorkerJob[], cfg: ParsedEnvConfig): Promise<AlertSubmitSummary[]> {
+  const pool = new WorkerPoolExecutor(cfg);
+  try {
+    const results = await Promise.all(jobs.map((job) => pool.execute(job)));
+    return results.map((result, index) => {
+      const job = jobs[index]!;
+      if (result.ok && result.summary) return result.summary;
+      return {
+        total: job.batch.length,
+        accepted: 0,
+        rejected: 0,
+        failed: job.batch.length,
+        retried: 0,
+        gaveUpExpired: 0,
+        exhaustedRetries: 0,
+        awaitingCredentials: false,
+        results: job.batch.map((msisdn) => ({
+          messageId: `${job.alertId}-${msisdn}`,
+          msisdn,
+          outcome: 'failed' as const,
+          errorText: result.error ?? 'worker failed',
+        })),
+      };
+    });
+  } finally {
+    await pool.terminate();
+  }
 }

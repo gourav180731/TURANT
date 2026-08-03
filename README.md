@@ -83,14 +83,14 @@ Supporting code:
 | 03 Subscribers | Subscriber DB + Redis (`REDIS_URL`)               | Designed; **AWAITING DB**  |
 | 04 Matching | Module 03 cache populated                             | Designed; depends on 03    |
 | 05 Dedup | none                                                  | Built; tested              |
-| 06 Expiry | none (uses CAP `expires`)                             | Built; tested              |
+| 06 Expiry | none (uses CAP `expires`)                             | Built; tested — expiry halts retries mid-backoff |
 | 07 SMPP | `SMPP_HOST/PORT/SYSTEM_ID/PASSWORD/SYSTEM_TYPE`       | Built; tested; **AWAITING CREDENTIALS** |
 | 08 Validity | none (uses CAP `expires` + module 07)                 | Built; tested              |
 | 09 Priority | none                                                 | Built; tested              |
 | 10 Delivery | none                                                 | Built; tested              |
 | 11 DLR | SMSC that forwards `deliver_sm` (part of 07)          | Built; tested; **AWAITING CREDENTIALS** |
 | 12 EWS callback | `EWS_CALLBACK_URL` + `EWS_CALLBACK_TOKEN`           | Built; tested; **AWAITING URL** |
-| 13 Parallel | none                                                 | Built; tested              |
+| 13 Parallel | none                                                 | Built; tested — real `worker_threads` default |
 | 14 Load | real CAP XML for k6                                   | Script ready               |
 
 Every pending value lives in `.env` (see `.env.example`). When a credential
@@ -134,6 +134,16 @@ immediately; delivery percentiles (t0 → 50/90/100%) come from per-DLR duration
 recorded by module 11. Modules 01–02, 05–07, 11 instrument the trace today;
 module 13 (parallel workers) shares the same Redis-backed key per alert so the
 timeline stays coherent across workers.
+
+## Parallel execution (module 13)
+
+Default `PARALLEL_EXECUTION_MODE=threads` splits the deduplicated MSISDN list
+into batches (≤ `PARALLEL_WORKER_COUNT`) and submits each inside its own real
+OS thread (`node:worker_threads`), with a fixed pool that reuses workers across
+jobs and shuts them down after the alert (no thread leak). Set
+`PARALLEL_EXECUTION_MODE=inline` to run the identical pipeline in-process. Both
+paths carry the real CAP `expires` into the worker as `expiresAtIso`, so
+expiry-gated submission and retry halting behave identically end to end.
 
 ## Audit trail
 

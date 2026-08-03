@@ -1,37 +1,24 @@
 import { parentPort, workerData } from 'node:worker_threads';
-import { submitAlertBatch } from '../../07-smpp-integration/batch-submitter.js';
+import { submitAlertBatchChunked } from '../../07-smpp-integration/batch-submitter.js';
 import { ExpiryGuard } from '../../06-expiry-control/expiry-guard.js';
+import type { WorkerJob, WorkerResult } from '../types.js';
 
 /**
  * worker_threads entry for requirement #13.
  *
  * Receives one batch slice (post-dedup MSISDNs) and submits it through the
- * real module 07 client. Because the worker loads its own config from the
- * environment, real C-DOT SMPP credentials arriving later need no code change —
- * the worker reads them at call time. Results are posted back to the
- * orchestrator.
+ * real module 07 client, chunked to SUBMIT_BATCH_SIZE and gated by the real
+ * CAP expiry threaded in as `expiresAtIso` (requirement #6 end-to-end).
+ *
+ * Because the worker loads its own config from the environment, real C-DOT
+ * SMPP credentials arriving later need no code change — the worker reads them
+ * at call time. Results are posted back to the orchestrator via postMessage.
  */
-
-export interface WorkerJob {
-  alertId: string;
-  capIdentifier: string;
-  content: string;
-  batch: string[];
-  traceKey?: string;
-}
-
-export interface WorkerResult {
-  ok: boolean;
-  alertId: string;
-  capIdentifier: string;
-  summary?: unknown;
-  error?: string;
-}
 
 async function runJob(job: WorkerJob): Promise<WorkerResult> {
   try {
-    const guard = new ExpiryGuard({ expiresAt: null });
-    const summary = await submitAlertBatch(job.alertId, job.content, job.batch, {
+    const guard = new ExpiryGuard({ expiresAt: job.expiresAtIso ? new Date(job.expiresAtIso) : null });
+    const summary = await submitAlertBatchChunked(job.alertId, job.content, job.batch, {
       guard,
       traceKey: job.traceKey ?? job.capIdentifier,
     });
@@ -46,9 +33,14 @@ async function runJob(job: WorkerJob): Promise<WorkerResult> {
   }
 }
 
-if (parentPort && workerData) {
+if (parentPort) {
   const port = parentPort;
-  void runJob(workerData as WorkerJob).then((result) => {
-    port.postMessage(result);
+  // Pooled use: each job arrives as a message.
+  port.on('message', (job: WorkerJob) => {
+    void runJob(job).then((result) => port.postMessage(result));
   });
+  // Standalone use: a single job carried in workerData at spawn.
+  if (workerData) {
+    void runJob(workerData as WorkerJob).then((result) => port.postMessage(result));
+  }
 }

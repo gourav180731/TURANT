@@ -7,6 +7,6 @@
  * SMPP_SYSTEM_ID are set, submit paths report `awaitingCredentials`.
  */
 export { SmppClient, buildSubmitSmPdu, encodeMessageContent, smppErrorText } from './smpp-client.js';
-export { getSmppSession, resetSmppSessionForTests } from './smpp-session.js';
-export { submitAlertBatch, buildSmsMessages } from './batch-submitter.js';
+export { createSmppClient, getSmppSession, resetSmppSessionForTests, setSmppClientFactoryForTests } from './smpp-session.js';
+export { submitAlertBatch, submitAlertBatchChunked, buildSmsMessages, chunkBatch, resolveGuard } from './batch-submitter.js';
 export type { AlertSubmitSummary, SubmitAlertOptions } from './batch-submitter.js';
