@@ -94,7 +94,9 @@ describe('AlertTraceStore', () => {
     const a = `trace-list-a-${Date.now()}`;
     const b = `trace-list-b-${Date.now()}`;
     await traceStore.mark(a, 't0', 'ingest', 1);
+    await new Promise((r) => setTimeout(r, 5)); // distinct updatedAtMs timestamps
     await traceStore.mark(b, 't0', 'ingest', 2);
+    await new Promise((r) => setTimeout(r, 5));
     await traceStore.mark(b, 't1', 'match', 3); // touch b last
 
     const list = await traceStore.list(50);

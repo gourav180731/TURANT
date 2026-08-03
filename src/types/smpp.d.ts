@@ -2,8 +2,10 @@
  * Ambient declarations for the `smpp` package (farhadi/node-smpp), the
  * production-standard SMPP 3.4 implementation for Node.js.
  *
- * The package ships no bundled typings; this module is kept minimal and is
- * consumed by module 07 (SMSC integration), module 11 (DLR listener), etc.
+ * The package ships no bundled typings and is CJS (`module.exports = ...`);
+ * this declaration mirrors the real API surface used by TURANT. The library
+ * auto-encodes string `short_message` from the `data_coding` field (ASCII =
+ * GSM-7 / 7-bit, UCS2 = utf16-be), so callers pass plain text.
  */
 
 declare module 'smpp' {
@@ -13,6 +15,8 @@ declare module 'smpp' {
     host?: string;
     port?: number;
     debug?: boolean;
+    connectTimeout?: number;
+    auto_enquire_link_period?: number;
   }
 
   export interface BindOptions {
@@ -25,7 +29,7 @@ declare module 'smpp' {
     address_range?: string;
   }
 
-  /** Fields used by TURANT for submit_sm (module 07/08/09). */
+  /** Fields used by TURANT for submit_sm (modules 07/08/09). */
   export interface SubmitSmOptions {
     source_addr_ton?: number;
     source_addr_npi?: number;
@@ -55,28 +59,44 @@ declare module 'smpp' {
     [key: string]: unknown;
   }
 
+  /** deliver_sm PDU as received by TURANT's DLR listener (module 11). */
   export interface DeliverSmPdu extends Pdu {
     source_addr?: string;
     destination_addr?: string;
-    short_message?: { message?: string; [k: string]: unknown };
+    short_message?: { message?: string | Buffer; udh?: Buffer; [k: string]: unknown } | string | Buffer;
+    message_state?: number;
   }
 
   export interface Session extends EventEmitter {
     bind_transceiver(opts?: BindOptions, cb?: (pdu: Pdu) => void): void;
     bind_transmitter(opts?: BindOptions, cb?: (pdu: Pdu) => void): void;
+    bind_receiver(opts?: BindOptions, cb?: (pdu: Pdu) => void): void;
     submit_sm(opts: SubmitSmOptions, cb?: (pdu: Pdu) => void): void;
     deliver_sm(opts?: unknown, cb?: (pdu: Pdu) => void): void;
     enquire_link(cb?: (pdu: Pdu) => void): void;
     send(pdu: Record<string, unknown>): void;
     close(cb?: () => void): void;
+    destroy(cb?: () => void): void;
   }
 
-  export function connect(opts: SessionOptions): Session;
+  export function connect(opts: SessionOptions, listener?: () => void): Session;
+
+  export interface Encoding {
+    encode(value: string): string | Buffer;
+    decode(value: string | Buffer): string;
+  }
 
   export const encodings: {
-    gsm0338: {
-      encode(text: string, fallback?: string): string;
-      decode(data: string): string;
-    };
+    ASCII: Encoding;
+    LATIN1: Encoding;
+    UCS2: Encoding;
   };
+
+  const smpp: {
+    connect: typeof connect;
+    Session: { new (opts?: SessionOptions): Session };
+    encodings: typeof encodings;
+  };
+
+  export default smpp;
 }

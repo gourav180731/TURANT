@@ -61,8 +61,9 @@ targets t0→90% delivered as the pass/fail metric.
 - All coordinates enter as CAP `lat,lng` and are converted to GeoJSON `lng,lat`
   only at the PostGIS boundary (`src/utils/geometry.ts`).
 - Circle radii are CAP km → metres (`* 1000`) before `ST_Buffer(geography)`.
-- Every module is either implemented or carries a `PLAN.md` stating the real
-  input it awaits; nothing in the pipeline fabricates data.
+- Every module is either implemented (modules 01–02, 05–13) or carries a
+  `PLAN.md` stating the real input it awaits (modules 03–04, blocked on the
+  subscriber DB); nothing in the pipeline fabricates data.
 - Config is validated at boot by zod; malformed env fails fast.
 
 ## Capacity planning inputs (req 14)

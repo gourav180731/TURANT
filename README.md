@@ -59,10 +59,11 @@ npm run typecheck
 | 13| Parallel processing framework                  | `src/modules/13-parallel-processing/`                                 |
 | 14| Capacity / load documentation                 | `scripts/load-test/` + `docs/architecture.md`                         |
 
-**Build status:** modules 01–02 are fully implemented, tested and runnable now.
-Modules 03–13 have a `PLAN.md` in their folder documenting design, interfaces
-and the real inputs they wait on. Each is designed to build independently once
-its data arrives.
+**Build status:** modules 01–02, 05–13 are implemented, tested and runnable
+now. Modules 03–04 are designed but blocked on the real C-DOT subscriber DB
+(their `PLAN.md` documents the interface they wait on). Every implemented module
+is built against the real protocol/interface; the ones whose data source has not
+arrived yet report loudly and are marked **AWAITING** in the table below.
 
 Supporting code:
 - `src/config/` — all connections/credentials via env (zod-validated)
@@ -81,15 +82,15 @@ Supporting code:
 | 02 Towers | PostGIS DB (`DATABASE_URL`) + tower table schema    | Built; **AWAITING DB creds** |
 | 03 Subscribers | Subscriber DB + Redis (`REDIS_URL`)               | Designed; **AWAITING DB**  |
 | 04 Matching | Module 03 cache populated                             | Designed; depends on 03    |
-| 05 Dedup | none                                                  | Designed                   |
-| 06 Expiry | none (uses CAP `expires`)                             | Designed                   |
-| 07 SMPP | `SMPP_HOST/PORT/SYSTEM_ID/PASSWORD/SYSTEM_TYPE`       | Designed; **AWAITING CREDENTIALS** |
-| 08 Validity | none (uses CAP `expires` + module 07)                 | Designed                   |
-| 09 Priority | none                                                 | Designed                   |
-| 10 Delivery | none                                                 | Designed                   |
-| 11 DLR | SMSC that forwards `deliver_sm` (part of 07)          | Designed                   |
-| 12 EWS callback | `EWS_CALLBACK_URL` + `EWS_CALLBACK_TOKEN`           | Designed; **AWAITING URL** |
-| 13 Parallel | none                                                 | Designed                   |
+| 05 Dedup | none                                                  | Built; tested              |
+| 06 Expiry | none (uses CAP `expires`)                             | Built; tested              |
+| 07 SMPP | `SMPP_HOST/PORT/SYSTEM_ID/PASSWORD/SYSTEM_TYPE`       | Built; tested; **AWAITING CREDENTIALS** |
+| 08 Validity | none (uses CAP `expires` + module 07)                 | Built; tested              |
+| 09 Priority | none                                                 | Built; tested              |
+| 10 Delivery | none                                                 | Built; tested              |
+| 11 DLR | SMSC that forwards `deliver_sm` (part of 07)          | Built; tested; **AWAITING CREDENTIALS** |
+| 12 EWS callback | `EWS_CALLBACK_URL` + `EWS_CALLBACK_TOKEN`           | Built; tested; **AWAITING URL** |
+| 13 Parallel | none                                                 | Built; tested              |
 | 14 Load | real CAP XML for k6                                   | Script ready               |
 
 Every pending value lives in `.env` (see `.env.example`). When a credential
@@ -108,6 +109,8 @@ arrives you only edit `.env` — **zero code changes**.
 - `GET /api/v1/traces/:capIdentifier` — full latency timeline for one alert:
   t0..t5 timestamps, inter-stage deltas, and delivery percentiles
   (t0 → first / 50% / 90% / 100% of recipients).
+- `GET /api/v1/alerts/:capIdentifier/report` — per-alert delivery report:
+  DLR counts + latency, built from real receipts by module 11.
 - `POST /api/v1/debug/towers/resolve` — only with `ENABLE_DEBUG_ENDPOINTS=true`;
   exercises module 02 against the real tower DB once connected.
 
@@ -128,16 +131,17 @@ CAP alert identifier (`src/tracing/trace-store.ts`, memory + Redis mirror):
 
 Deltas (t1−t0, t2−t1, …) are precomputed so the bottleneck stage is visible
 immediately; delivery percentiles (t0 → 50/90/100%) come from per-DLR durations
-recorded by module 11. Modules 01–02 are instrumented today; modules 03–13 carry
-the exact mark calls in their `PLAN.md` so measurement works the moment their
-data arrives.
+recorded by module 11. Modules 01–02, 05–07, 11 instrument the trace today;
+module 13 (parallel workers) shares the same Redis-backed key per alert so the
+timeline stays coherent across workers.
 
 ## Audit trail
 
 Every stage logs structured JSON keyed by `alertId`
-(`cap.ingest.parsed`, `cell.match.start/completed`, …). Set `AUDIT_LOG_FILE` to
-append JSON-lines for the traceability record. Pending stages (dedup,
-submission, DLR, EWS callback) will log their own events as they are built.
+(`cap.ingest.parsed`, `cell.match.start/completed`, `dedup.completed`,
+`retry.round`, `dlr.received`, `ews_callback.delivered`, …). Set
+`AUDIT_LOG_FILE` to append JSON-lines for the traceability record. Modules 03–04
+will log their own events when the subscriber DB arrives.
 
 ## Running against the real tower DB (module 02)
 

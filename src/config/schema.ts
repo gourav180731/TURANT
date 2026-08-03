@@ -105,6 +105,9 @@ export const envSchema = z.object({
   SMS_DATA_CODING: z.enum(DATA_CODINGS).default('7bit'),
   SMS_REGISTERED_DELIVERY: intFromEnv(0x03),
   SMPP_RECONNECT_DELAY_MS: intFromEnvNonZero(5000),
+  SMPP_SUBMIT_TIMEOUT_MS: intFromEnvNonZero(10_000),
+  SMPP_ENQUIRE_LINK_PERIOD_MS: intFromEnvNonZero(30_000),
+  SMPP_SUBMIT_CONCURRENCY: intFromEnvNonZero(25),
 
   // ---- Delivery strategy ----
   DELIVERY_STRATEGY: z.enum(DELIVERY_STRATEGIES).default('single-attempt'),
