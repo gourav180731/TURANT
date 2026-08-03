@@ -59,11 +59,14 @@ npm run typecheck
 | 13| Parallel processing framework                  | `src/modules/13-parallel-processing/`                                 |
 | 14| Capacity / load documentation                 | `scripts/load-test/` + `docs/architecture.md`                         |
 
-**Build status:** modules 01–02, 05–13 are implemented, tested and runnable
-now. Modules 03–04 are designed but blocked on the real C-DOT subscriber DB
-(their `PLAN.md` documents the interface they wait on). Every implemented module
-is built against the real protocol/interface; the ones whose data source has not
-arrived yet report loudly and are marked **AWAITING** in the table below.
+**Build status:** modules 01–02, 05–13 are implemented, tested and **wired into
+the live pipeline** — a real incoming CAP alert automatically flows through
+ingestion (01) and tower resolution (02), then halts cleanly and loudly at
+subscriber matching because modules 03–04 are genuinely blocked on the real
+C-DOT subscriber DB (their `PLAN.md` documents the interface they wait on).
+Every implemented module is built against the real protocol/interface; the ones
+whose data source has not arrived yet report loudly and are marked **AWAITING**
+in the table below.
 
 Supporting code:
 - `src/config/` — all connections/credentials via env (zod-validated)
@@ -78,19 +81,19 @@ Supporting code:
 
 | Module | Real input from C-DOT                                  | Status                     |
 |--------|--------------------------------------------------------|----------------------------|
-| 01 CAP | CAP XML feed (push URL or drop dir), language codes    | Built; needs live feed     |
-| 02 Towers | PostGIS DB (`DATABASE_URL`) + tower table schema    | Built; **AWAITING DB creds** |
-| 03 Subscribers | Subscriber DB + Redis (`REDIS_URL`)               | Designed; **AWAITING DB**  |
-| 04 Matching | Module 03 cache populated                             | Designed; depends on 03    |
-| 05 Dedup | none                                                  | Built; tested              |
-| 06 Expiry | none (uses CAP `expires`)                             | Built; tested — expiry halts retries mid-backoff |
-| 07 SMPP | `SMPP_HOST/PORT/SYSTEM_ID/PASSWORD/SYSTEM_TYPE`       | Built; tested; **AWAITING CREDENTIALS** |
-| 08 Validity | none (uses CAP `expires` + module 07)                 | Built; tested              |
-| 09 Priority | none                                                 | Built; tested              |
-| 10 Delivery | none                                                 | Built; tested              |
-| 11 DLR | SMSC that forwards `deliver_sm` (part of 07)          | Built; tested; **AWAITING CREDENTIALS** |
-| 12 EWS callback | `EWS_CALLBACK_URL` + `EWS_CALLBACK_TOKEN`           | Built; tested; **AWAITING URL** |
-| 13 Parallel | none                                                 | Built; tested — real `worker_threads` default |
+| 01 CAP | CAP XML feed (push URL or drop dir), language codes    | Built; tested; **wired into live pipeline** |
+| 02 Towers | PostGIS DB (`DATABASE_URL`) + tower table schema    | Built; tested; wired; **AWAITING DB creds** |
+| 03 Subscribers | Subscriber DB + Redis (`REDIS_URL`)               | Designed; pipeline halts here + reports it; **AWAITING DB** |
+| 04 Matching | Module 03 cache populated                             | Designed; pipeline halts here + reports it; depends on 03 |
+| 05 Dedup | none                                                  | Built; tested; wired into live pipeline |
+| 06 Expiry | none (uses CAP `expires`)                             | Built; tested — expiry halts retries mid-backoff; wired |
+| 07 SMPP | `SMPP_HOST/PORT/SYSTEM_ID/PASSWORD/SYSTEM_TYPE`       | Built; tested; wired; **AWAITING CREDENTIALS** |
+| 08 Validity | none (uses CAP `expires` + module 07)                 | Built; tested; wired |
+| 09 Priority | none                                                 | Built; tested; wired |
+| 10 Delivery | none                                                 | Built; tested; wired |
+| 11 DLR | SMSC that forwards `deliver_sm` (part of 07)          | Built; tested; wired; **AWAITING CREDENTIALS** |
+| 12 EWS callback | `EWS_CALLBACK_URL` + `EWS_CALLBACK_TOKEN`           | Built; tested; wired; **AWAITING URL** |
+| 13 Parallel | none                                                 | Built; tested — real `worker_threads` default; wired |
 | 14 Load | real CAP XML for k6                                   | Script ready               |
 
 Every pending value lives in `.env` (see `.env.example`). When a credential
@@ -102,8 +105,15 @@ arrives you only edit `.env` — **zero code changes**.
 
 - `GET /healthz` — app, DB, Redis, SMPP status (SMPP reports `awaiting_credentials`).
 - `POST /api/v1/alerts/cap` — push a CAP XML document. Returns `202` with
-  `alertId`, `capIdentifier`, `expiresAt`. `400` on malformed CAP, `413` when
-  over `CAP_MAX_XML_BYTES`.
+  `alertId`, `capIdentifier`, `expiresAt`, and a `pipeline` reference to the
+  status endpoint. After ingest the automatic pipeline runs asynchronously
+  (ingest → tower resolution → subscriber matching → …). `400` on malformed
+  CAP, `413` when over `CAP_MAX_XML_BYTES`.
+- `GET /api/v1/alerts/:capIdentifier/pipeline-status` — how far the automatic
+  pipeline got: `running | halted | completed`, the farthest stage, the halt
+  reason when one exists (e.g. `awaiting subscriber data — modules 03/04 not
+  yet connected`, or the missing `DATABASE_URL` error), tower count from module
+  02, and a `traceRef` to the latency timeline below.
 - `GET /api/v1/traces` — latency dashboard: recent per-alert traces with
   precomputed stage deltas.
 - `GET /api/v1/traces/:capIdentifier` — full latency timeline for one alert:

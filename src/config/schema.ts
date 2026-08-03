@@ -142,4 +142,12 @@ export type EnvConfig = z.infer<typeof envSchema>;
 export interface ParsedEnvConfig extends Omit<EnvConfig, 'SMPP_INTERFACE_VERSION'> {
   /** SMPP interface version parsed from hex string (e.g. 0x34 -> 52) */
   SMPP_INTERFACE_VERSION_NUM: number;
+  /**
+   * Derived flag: subscriber matching (modules 03/04) can only be exercised
+   * when the prefetch layer is enabled AND a subscriber DB is configured. The
+   * pipeline additionally requires a real SubscriberMatcher to be registered,
+   * so today this is always effectively "not available" until C-DOT connects
+   * the subscriber database.
+   */
+  SUBSCRIBER_MATCHING_AVAILABLE: boolean;
 }

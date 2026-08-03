@@ -14,4 +14,6 @@ export { parseCapXml, capTiming, parseCapTimestamp, CapParseError } from './cap-
 export type { ParseCapOptions } from './cap-parser.js';
 export { capAlertSchema } from './cap-schema.js';
 export { createCapIngestionRoutes } from './routes.js';
+export type { CapIngestionRouteOptions } from './routes.js';
 export { CapDirectoryPoller } from './poller.js';
+export type { CapDirectoryPollerOptions } from './poller.js';

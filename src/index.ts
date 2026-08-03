@@ -1,3 +1,5 @@
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import express, { type Request, type Response } from 'express';
 import { loadConfig } from './config/env.js';
 import { createLatencyRoutes } from './http/latency-routes.js';
@@ -11,11 +13,14 @@ import { hasPool, pingPool } from './persistence/pg-pool.js';
 import { hasRedis, pingRedis } from './persistence/redis-client.js';
 import { traceStore } from './tracing/trace-store.js';
 import { flushLogger, getLogger } from './utils/logger.js';
+import { runAlertPipeline } from './pipeline/alert-pipeline.js';
+import { createPipelineStatusRoutes } from './pipeline/routes.js';
+import { pipelineStatusStore } from './pipeline/pipeline-status.js';
 
 const cfg = loadConfig();
 const logger = getLogger();
 
-const app = express();
+export const app = express();
 app.disable('x-powered-by');
 
 app.get('/healthz', async (_req: Request, res: Response) => {
@@ -35,10 +40,38 @@ app.get('/healthz', async (_req: Request, res: Response) => {
 });
 
 const ingestionService = new CapIngestionService();
-app.use('/api/v1', createCapIngestionRoutes(ingestionService));
+
+// After a successful ingest, run the real automatic pipeline (01 → 02 →
+// 03/04 → 05 → 13) asynchronously. It halts loudly at the first stage whose
+// real input is missing — it never fabricates data — and writes progress to
+// the pipeline-status store for GET /api/v1/alerts/:capIdentifier/pipeline-status.
+app.use(
+  '/api/v1',
+  createCapIngestionRoutes(ingestionService, {
+    onIngested: (result) => {
+      void runAlertPipeline({
+        alert: result.alert,
+        capIdentifier: result.capIdentifier,
+        alertId: result.alertId,
+      })
+        .then((status) => {
+          logger.info(
+            { capIdentifier: result.capIdentifier, status: status.status, stage: status.stage, reason: status.reason },
+            'pipeline.reported',
+          );
+        })
+        .catch((err) => {
+          logger.error({ err, capIdentifier: result.capIdentifier }, 'pipeline.failed_unexpectedly');
+        });
+    },
+  }),
+);
 
 // Cross-cutting latency dashboard (per-alert t0..t5 + delivery percentiles).
 app.use('/api/v1', createLatencyRoutes(traceStore));
+
+// Automatic pipeline progress / halt status per alert.
+app.use('/api/v1', createPipelineStatusRoutes(pipelineStatusStore));
 
 // DLR reporting (per-alert delivery report from real receipts).
 const dlrListener = new DlrListener();
@@ -57,22 +90,40 @@ if (cfg.ENABLE_DEBUG_ENDPOINTS) {
   logger.warn('DEBUG endpoints enabled — intended for C-DOT staging only');
 }
 
-const poller = new CapDirectoryPoller(ingestionService);
-poller.start();
+/**
+ * Start the listening server. Only runs when index.ts is the main entrypoint
+ * (node dist/index.js, tsx src/index.ts); importing `app` from tests never
+ * binds a port or starts background work.
+ */
+function startServer(): void {
+  // Wire the DLR listener onto the shared SMPP session when credentials exist.
+  if (cfg.SMPP_HOST && cfg.SMPP_SYSTEM_ID) {
+    getSmppSession(cfg)
+      .connect()
+      .then(() => dlrListener.attachTo(getSmppSession(cfg)))
+      .catch((err) => logger.warn({ err }, 'smpp.connect_deferred'));
+  }
 
-const server = app.listen(cfg.PORT, () => {
-  logger.info({ port: cfg.PORT, mode: cfg.TOWER_SOURCE_MODE }, 'turant.started');
-});
+  const poller = new CapDirectoryPoller(ingestionService);
+  poller.start();
 
-async function shutdown(signal: string): Promise<void> {
-  logger.info({ signal }, 'turant.shutting_down');
-  poller.stop();
-  server.close();
-  await flushLogger();
-  process.exit(0);
+  const server = app.listen(cfg.PORT, () => {
+    logger.info({ port: cfg.PORT, mode: cfg.TOWER_SOURCE_MODE }, 'turant.started');
+  });
+
+  async function shutdown(signal: string): Promise<void> {
+    logger.info({ signal }, 'turant.shutting_down');
+    poller.stop();
+    server.close();
+    await flushLogger();
+    process.exit(0);
+  }
+
+  process.on('SIGINT', () => void shutdown('SIGINT'));
+  process.on('SIGTERM', () => void shutdown('SIGTERM'));
 }
 
-process.on('SIGINT', () => void shutdown('SIGINT'));
-process.on('SIGTERM', () => void shutdown('SIGTERM'));
-
-export { app };
+const isMain = process.argv[1] !== undefined && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
+if (isMain) {
+  startServer();
+}

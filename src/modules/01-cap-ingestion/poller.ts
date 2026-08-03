@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { loadConfig } from '../../config/env.js';
 import { getLogger } from '../../utils/logger.js';
-import type { CapIngestionService } from './service.js';
+import { CapIngestionService, type IngestResult } from './service.js';
 
 const logger = getLogger();
 
@@ -14,11 +14,19 @@ const logger = getLogger();
  * Parse failures are quarantined under <archive>/.failed/ so the source can
  * recover them without reprocessing duplicates.
  */
+export interface CapDirectoryPollerOptions {
+  /** Fired after each successful ingest (fire-and-forget pipeline hook). */
+  onIngested?: (result: IngestResult) => void;
+}
+
 export class CapDirectoryPoller {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
 
-  constructor(private readonly service: CapIngestionService) {}
+  constructor(
+    private readonly service: CapIngestionService,
+    private readonly options: CapDirectoryPollerOptions = {},
+  ) {}
 
   start(): void {
     const cfg = loadConfig();
@@ -62,6 +70,9 @@ export class CapDirectoryPoller {
     try {
       const xml = await fs.readFile(fullPath, 'utf8');
       const result = await this.service.ingest(xml);
+      if (this.options.onIngested) {
+        this.options.onIngested(result);
+      }
       log.info({ capIdentifier: result.capIdentifier, alertId: result.alertId }, 'cap.poll.ingested');
       await this.finalize(fullPath, archiveDir, false);
     } catch (err) {

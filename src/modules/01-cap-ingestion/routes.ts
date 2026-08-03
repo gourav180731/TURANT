@@ -1,7 +1,7 @@
 import express, { Router, type Request, type Response } from 'express';
 import { loadConfig } from '../../config/env.js';
 import { CapParseError } from './cap-parser.js';
-import { CapIngestionService } from './service.js';
+import { CapIngestionService, type IngestResult } from './service.js';
 
 /**
  * CAP ingestion HTTP endpoint (push mode) — requirement #1.
@@ -11,12 +11,20 @@ import { CapIngestionService } from './service.js';
  *   Body: raw CAP XML (ITU-T X.1303 / CAP 1.2)
  *
  *   Responses:
- *     202 Accepted  -> { alertId, capIdentifier, expiresAt, duplicate }
+ *     202 Accepted  -> { alertId, capIdentifier, expiresAt, duplicate, pipeline }
  *     400           -> malformed XML / non-conforming CAP
  *     413           -> body exceeds CAP_MAX_XML_BYTES
+ *
+ * After a successful ingest the optional `onIngested` hook fires (fire-and-
+ * forget) so the automatic end-to-end pipeline can run asynchronously without
+ * delaying the 202. The response carries a pipeline reference; the detailed
+ * halt/progress status is available at the pipeline-status endpoint.
  */
+export interface CapIngestionRouteOptions {
+  onIngested?: (result: IngestResult) => void;
+}
 
-export function createCapIngestionRoutes(service: CapIngestionService): Router {
+export function createCapIngestionRoutes(service: CapIngestionService, options: CapIngestionRouteOptions = {}): Router {
   const router = Router();
   const cfg = loadConfig();
 
@@ -36,12 +44,20 @@ export function createCapIngestionRoutes(service: CapIngestionService): Router {
     }
     try {
       const result = await service.ingest(xml);
+      if (options.onIngested) {
+        options.onIngested(result);
+      }
       res.status(202).json({
         alertId: result.alertId,
         capIdentifier: result.capIdentifier,
         expiresAt: result.expiresAt,
         duplicate: result.duplicate,
         status: 'accepted',
+        pipeline: {
+          status: 'running',
+          stage: 'ingested',
+          statusUrl: `/api/v1/alerts/${encodeURIComponent(result.capIdentifier)}/pipeline-status`,
+        },
       });
     } catch (err) {
       if (err instanceof CapParseError) {

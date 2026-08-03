@@ -1,4 +1,5 @@
 import type { CapCoordinate, CapGeometry } from '../types/cap.js';
+import type { GeoZone } from '../types/tower.js';
 
 /**
  * CAP geometry helpers.
@@ -40,4 +41,21 @@ export function isClosedRing(ring: CapCoordinate[]): boolean {
   const first = ring[0]!;
   const last = ring[ring.length - 1]!;
   return first.lat === last.lat && first.lng === last.lng;
+}
+
+/**
+ * Convert a CAP alert's geometries (`alert.info.areas[].geometries`) into the
+ * `GeoZone` shape consumed by `TowerResolver`/`TowerSource` (module 02). Reuses
+ * the CAP lat,lng → GeoJSON lng,lat ring conversion so the axis order is
+ * defined in exactly one place.
+ */
+export function capZoneToGeoZone(geometries: readonly CapGeometry[]): GeoZone {
+  return {
+    geometries: geometries.map((g) => {
+      if (g.type === 'Polygon') {
+        return { type: 'Polygon', coordinates: g.coordinates.map(capRingToGeoJson) };
+      }
+      return { type: 'Circle', center: g.center, radiusMeters: g.radiusMeters };
+    }),
+  };
 }

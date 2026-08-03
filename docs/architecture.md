@@ -59,6 +59,39 @@ per-DLR durations (`computeDeliveryPercentiles`). The EWS callback (12) carries
 `latencyMs` in its payload. The load harness (`scripts/load-test/latency-e2e.k6.js`)
 targets t0→90% delivered as the pass/fail metric.
 
+## Automatic pipeline wiring
+
+The HTTP route `POST /api/v1/alerts/cap` no longer stops at ingestion: after a
+successful ingest (01) it fires `runAlertPipeline` (`src/pipeline/alert-pipeline.ts`)
+asynchronously, and that runner chains the real modules automatically:
+
+```
+01 ingest (t0)
+ → 02 build GeoZone from the alert's real CAP geometries + TowerResolver (t1)
+ → 03/04 subscriber matching  — halts here: no real data source connected
+ → 05 dedup (t2)              — runs only when a real SubscriberMatcher returned data
+ → 13 submit (t3)             — real SMPP submission (worker_threads default)
+```
+
+The chain stops cleanly and loudly at the first stage whose real input is
+missing, and never fabricates what is absent. Module 02 failures (e.g.
+`DATABASE_URL`/`TOWER_HTTP_BASE_URL` not configured) are caught and reported as
+a `pipeline.halted` at `tower-resolution`. Modules 03/04 are PLAN.md-only and
+genuinely depend on C-DOT's subscriber DB: nothing registers a
+`SubscriberMatcher` (`src/pipeline/subscriber-matcher.ts`) today, so the
+pipeline always halts at `subscriber-matching` with the explicit reason
+`awaiting subscriber data — modules 03/04 not yet connected`. The dissemination
+leg (dedup → submit) is built and runs only when a real matcher actually
+returns data — it is never stubbed to make the pipeline "appear" further along.
+Every run writes to the pipeline-status store, surfaced at
+`GET /api/v1/alerts/:capIdentifier/pipeline-status` (halt reason + tower count
++ a reference to the latency-trace endpoint).
+
+> **Current honest state of the project:** today, a real incoming CAP alert
+> automatically flows through ingestion and tower resolution and then halts
+> with a visible, correct status — it does not yet disseminate SMS because
+> subscriber matching (03/04) has no real data source connected.
+
 ## Consistency & correctness notes
 
 - All coordinates enter as CAP `lat,lng` and are converted to GeoJSON `lng,lat`

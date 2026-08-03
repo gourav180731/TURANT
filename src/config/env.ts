@@ -27,6 +27,8 @@ export function loadConfig(): ParsedEnvConfig {
   cached = {
     ...parsed.data,
     SMPP_INTERFACE_VERSION_NUM: parseInt(parsed.data.SMPP_INTERFACE_VERSION, 16),
+    SUBSCRIBER_MATCHING_AVAILABLE:
+      parsed.data.SUBSCRIBER_PREFETCH_ENABLED && parsed.data.DATABASE_URL !== undefined,
   };
   return cached;
 }
