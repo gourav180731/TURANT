@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+coverage/
+
+# Environment — NEVER commit real credentials
+.env
+.env.local
+.env.*.local
+
+# Logs / audit output
+logs/
+*.log
+audit/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
