@@ -16,6 +16,12 @@ import type { CellTower } from '../src/types/tower.js';
 const fixturePath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'cap.xml');
 const fixtureXml = readFileSync(fixturePath, 'utf8');
 
+// Real IMD Patna CAP alert (identifier 1756825900862016, 2025-09-02). Kept
+// byte-for-byte as received from IMD so the pipeline is proven against real,
+// large multi-polygon input with IMD's non-standard enum values.
+const imdFixturePath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'imd-patna-2025-09-02.xml');
+const imdFixtureXml = readFileSync(imdFixturePath, 'utf8');
+
 const fakeTowerSource: TowerSource = {
   name: 'fake',
   async findTowersInZone(): Promise<CellTower[]> {
@@ -76,6 +82,45 @@ describe('pipeline integration — direct (ingestion service + pipeline)', () =>
     expect(result.status).toBe('halted');
     expect(result.haltedAt).toBe('tower-resolution');
     expect(result.reason).toMatch(/DATABASE_URL is not configured/);
+  });
+
+  it('handles the real IMD Patna CAP alert end-to-end (10 polygons, non-standard enums, Hindi headline)', async () => {
+    const service = new CapIngestionService();
+    const ingested = await service.ingest(imdFixtureXml);
+
+    // Real identity from the actual file — never a synthetic value.
+    expect(ingested.capIdentifier).toBe('IMD Patna:1756825900862016');
+    expect(ingested.alert.sender).toBe('IMD Patna');
+
+    // All 10 real polygons survive ingestion as matchable geometries.
+    expect(ingested.alert.info.areas).toHaveLength(1);
+    const area = ingested.alert.info.areas[0]!;
+    expect(area.polygons).toHaveLength(10);
+    expect(area.geometries).toHaveLength(10);
+    expect(area.polygons.some((p) => p.length > 1000)).toBe(true);
+
+    // IMD emits non-CAP-standard values (ALERT / Very Likely); the parser
+    // reports them loudly and never fabricates a value in their place.
+    expect(ingested.alert.info.severity).toBe('Unknown');
+    expect(ingested.alert.info.certainty).toBe('Unknown');
+    expect(ingested.alert.info.urgency).toBe('Expected');
+
+    // The real Hindi headline/instruction must survive intact (UTF-8).
+    expect(ingested.alert.info.headline).toContain('बक्सर');
+    expect(ingested.alert.info.instruction).toBe('Please follow SDMA guidelines.');
+
+    const result = await runAlertPipeline({
+      alert: ingested.alert,
+      capIdentifier: ingested.capIdentifier,
+      alertId: ingested.alertId,
+      resolver: new TowerResolver(),
+      source: fakeTowerSource,
+    });
+
+    expect(result.status).toBe('halted');
+    expect(result.haltedAt).toBe('subscriber-matching');
+    expect(result.towerCount).toBe(1);
+    expect(result.reason).toMatch(/awaiting subscriber data — modules 03\/04 not yet connected/);
   });
 });
 

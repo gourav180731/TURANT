@@ -64,13 +64,15 @@ describe('module 13 — real worker_threads pool', () => {
   it('orchestrates through the real worker pool by default in threads mode', async () => {
     const cfg = workerCfg();
     const msisdns = Array.from({ length: 7 }, (_, i) => `919000${i}`);
+    const sentIso = new Date(Date.now() - 60_000).toISOString();
+    const expiresIso = new Date(Date.now() + 3_600_000).toISOString();
     const alert = parseCapXml(`<?xml version="1.0"?><alert xmlns="urn:oasis:names:tc:emergency:cap:1.2">
       <identifier>CDOT-THREADS-${Date.now()}</identifier><sender>ews@cdot.in</sender>
-      <sent>2026-08-04T06:00:00+05:30</sent><status>Actual</status><msgType>Alert</msgType>
+      <sent>${sentIso}</sent><status>Actual</status><msgType>Alert</msgType>
       <scope>Public</scope><code>x</code>
       <info><language>en-IN</language><category>Met</category><event>Storm</event>
       <urgency>Immediate</urgency><severity>Severe</severity><certainty>Likely</certainty>
-      <expires>2026-08-04T09:00:00+05:30</expires><area><areaDesc>test</areaDesc></area></info>
+      <expires>${expiresIso}</expires><area><areaDesc>test</areaDesc></area></info>
     </alert>`);
 
     // No executor supplied → the default threads path must spawn real workers.
