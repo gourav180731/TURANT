@@ -181,6 +181,14 @@ export const envSchema = z.object({
   /** Subscribers fetched per cell_id chunk in repository lookups. */
   SUBSCRIBER_LOOKUP_CHUNK_SIZE: intFromEnvNonZero(1000),
 
+  // ---- Telecom Master Dataset (BTS reference schema) ------------------------
+  /**
+   * How many cell towers the dedicated telecom-master seeder generates
+   * (`npm run seed:telecom-master`). Defaults to a realistic ~5,000-cell
+   * Delhi NCR dataset; raise it for bigger networks.
+   */
+  TELECOM_MASTER_TOWER_COUNT: intFromEnvNonZero(5000),
+
   // ---- RAT (radio access technology) distribution, % must sum to 100 -------
   TECH_GSM_PCT: intFromEnv(20),
   TECH_UMTS_PCT: intFromEnv(20),

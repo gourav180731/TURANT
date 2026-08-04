@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "seed": "tsx scripts/seed-telecom.ts"
+    "seed": "tsx scripts/seed-telecom.ts",
+    "seed:telecom-master": "tsx scripts/seed-telecom-master.ts"
   },
   "keywords": [
     "cap",

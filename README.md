@@ -214,6 +214,22 @@ Properties:
   keeps running and the pipeline halts loudly at subscriber-matching, as it did
   before this module existed.
 
+### Telecom master dataset (C-DOT BTS reference table)
+
+In Postgres mode the seeder also writes a **Telecom Master Dataset** into the
+`telecom_master` reference table (`npm run seed:telecom-master`,
+`scripts/seed-telecom-master.ts`, default `TELECOM_MASTER_TOWER_COUNT=5000`
+cells). It mirrors the C-DOT BTS schema (`cell_id`/`bts_id` unique, WKT `geom`,
+operator `service_provider`, `site_type`, `switch_make/model`, `rnc_id`,
+`tsp_name`, `msc_ip`, `technology`, …), is deterministic under `SIM_SEED`, and
+is **geographically clustered** around 15 weighted Delhi-NCR hotspots with a
+gaussian jitter instead of uniform scatter. Module 02 can resolve towers
+directly from it (`TOWER_TABLE=telecom_master`), and module 03 subscribers are
+attached to the same `cell_id`s, so the two views agree. PostGIS is required
+for the spatial `geom` column; the migration lives in
+`src/persistence/migrations/002_telecom_sim.sql`. See
+`docs/telecom-simulation.md`.
+
 When C-DOT connects the real database, point `SUBSCRIBER_COL_*` at the real
 schema (same config-driven pattern as the tower adapter) and implement
 `SubscriberRepository` against it — the pipeline code does not change. See

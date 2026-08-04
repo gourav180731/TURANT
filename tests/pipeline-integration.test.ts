@@ -22,6 +22,17 @@ const fixtureXml = readFileSync(fixturePath, 'utf8');
 const imdFixturePath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'imd-patna-2025-09-02.xml');
 const imdFixtureXml = readFileSync(imdFixturePath, 'utf8');
 
+// Run the whole file in the honest "no tower DB" state regardless of any local
+// .env on the machine running it. Otherwise a real .env (DATABASE_URL set +
+// SUBSCRIBER_DB_MODE=postgres) would make the direct `ingest()` calls open a
+// real Postgres pool — persisting into the alerts table and leaking a live
+// pool into the HTTP tests below. SUBSCRIBER_DB_MODE must not be 'postgres'
+// here: the fail-fast config rejects that mode without a DATABASE_URL.
+process.env.DATABASE_URL = '';
+process.env.USE_DUMMY_SUBSCRIBER_DB = 'false';
+process.env.SUBSCRIBER_DB_MODE = 'memory';
+resetConfig();
+
 const fakeTowerSource: TowerSource = {
   name: 'fake',
   async findTowersInZone(): Promise<CellTower[]> {
@@ -129,15 +140,20 @@ describe('pipeline integration — real HTTP entrypoint', () => {
 
   beforeAll(async () => {
     // Force the honest "tower DB not connected" state so the test is
-    // deterministic regardless of any local .env on the machine running it.
+    // deterministic regardless of any local .env on the machine running it
+    // (re-affirms the file-scope env above).
     process.env.DATABASE_URL = '';
     process.env.TOWER_SOURCE_MODE = 'postgis';
+    process.env.USE_DUMMY_SUBSCRIBER_DB = 'false';
+    process.env.SUBSCRIBER_DB_MODE = 'memory';
     resetConfig();
   });
 
   afterAll(async () => {
     delete process.env.DATABASE_URL;
     delete process.env.TOWER_SOURCE_MODE;
+    delete process.env.USE_DUMMY_SUBSCRIBER_DB;
+    delete process.env.SUBSCRIBER_DB_MODE;
     resetConfig();
     if (server) {
       await new Promise<void>((resolve) => server!.close(() => resolve()));

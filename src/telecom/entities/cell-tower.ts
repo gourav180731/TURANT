@@ -17,6 +17,24 @@ export interface TelecomCellTower {
   siteId: string;
   /** Cell identifier (hex like 9C81 or numeric like 65511), unique. */
   cellId: string;
+  /** BTS identifier — unique per base station (C-DOT `bts_id`). */
+  btsId?: string;
+  /** Telecom service provider short name, e.g. MTNL (C-DOT `service_provider`). */
+  serviceProvider?: string;
+  /** Telecom circle / service area label, e.g. DELHI (C-DOT `service_area`). */
+  serviceArea?: string;
+  /** Site type: MACRO/ROOFTOP/TOWER/MICRO/INDOOR (C-DOT `site_type`). */
+  siteType?: string;
+  /** Switch vendor (C-DOT `switch_make`). */
+  switchMake?: string;
+  /** Switch / MSC model (C-DOT `switch_model`). */
+  switchModel?: string;
+  /** Numeric state code, Census 2011 (C-DOT `state_id`). */
+  stateId?: string;
+  /** Full operator name (C-DOT `tsp_name`). */
+  tspName?: string;
+  /** MSC (mobile switching centre) IP address (C-DOT `msc_ip`). */
+  mscIp?: string;
   /** E-UTRAN cell global identifier (LTE/NR). */
   ecgi?: string;
   /** Cell global identity (GSM/UMTS). */

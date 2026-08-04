@@ -89,6 +89,24 @@ export class TelecomSimulator {
     );
   }
 
+  /**
+   * Generate exactly `count` towers (independent of DUMMY_TOWER_COUNT) — used
+   * by the dedicated telecom-master seeder, which sizes the BTS dataset via
+   * TELECOM_MASTER_TOWER_COUNT while keeping the same deterministic RNG/seed.
+   */
+  generateTowersForCount(count: number): TelecomCellTower[] {
+    const techPct: Record<TelecomTechnology, number> = {
+      GSM: this.cfg.TECH_GSM_PCT,
+      UMTS: this.cfg.TECH_UMTS_PCT,
+      LTE: this.cfg.TECH_LTE_PCT,
+      NR5G: this.cfg.TECH_NR5G_PCT,
+    };
+    return generateTowers(
+      { count, techPct, seed: this.cfg.SIM_SEED },
+      mulberry32(this.cfg.SIM_SEED),
+    );
+  }
+
   async boot(): Promise<SimBootResult> {
     const cfg = this.cfg;
     if (!cfg.USE_DUMMY_SUBSCRIBER_DB) {

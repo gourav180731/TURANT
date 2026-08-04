@@ -58,11 +58,13 @@ export class PostgresSimSeeder {
 
   private async upsertSimTowers(pool: ReturnType<typeof getPool>, towers: readonly TelecomCellTower[]): Promise<void> {
     const cols = [
-      'site_id', 'cell_id', 'ecgi', 'cgi', 'enb_id', 'gnb_id', 'sector_id', 'pci', 'earfcn', 'uarfcn', 'arfcn',
-      'tac', 'lac', 'mcc', 'mnc', 'plmn', 'operator', 'operator_short_name', 'vendor', 'controller', 'rnc', 'bsc',
-      'rnc_id', 'rnc_ip', 'latitude', 'longitude', 'antenna_height_m', 'azimuth_deg', 'beam_width_deg',
-      'frequency_band', 'technology', 'max_users', 'current_load_pct', 'coverage_radius_m', 'power_status',
-      'backhaul_type', 'ip_address', 'state', 'district', 'city', 'zone', 'pin_code', 'created_at', 'properties',
+      'site_id', 'cell_id', 'bts_id', 'service_provider', 'service_area', 'site_type', 'switch_make',
+      'switch_model', 'state_id', 'tsp_name', 'msc_ip', 'ecgi', 'cgi', 'enb_id', 'gnb_id', 'sector_id',
+      'pci', 'earfcn', 'uarfcn', 'arfcn', 'tac', 'lac', 'mcc', 'mnc', 'plmn', 'operator',
+      'operator_short_name', 'vendor', 'controller', 'rnc', 'bsc', 'rnc_id', 'rnc_ip', 'latitude',
+      'longitude', 'antenna_height_m', 'azimuth_deg', 'beam_width_deg', 'frequency_band', 'technology',
+      'max_users', 'current_load_pct', 'coverage_radius_m', 'power_status', 'backhaul_type', 'ip_address',
+      'state', 'district', 'city', 'zone', 'pin_code', 'created_at', 'properties',
     ];
     const values: unknown[] = [];
     const groups: string[] = [];
@@ -70,9 +72,11 @@ export class PostgresSimSeeder {
     for (const t of towers) {
       groups.push(`(${Array.from({ length: cols.length }, () => `$${p++}`).join(', ')})`);
       values.push(
-        t.siteId, t.cellId, t.ecgi ?? null, t.cgi ?? null, t.enbId ?? null, t.gnbId ?? null,
-        t.sectorId ?? null, t.pci ?? null, t.earfcn ?? null, t.uarfcn ?? null, t.arfcn ?? null,
-        t.tac ?? null, t.lac ?? null, t.mcc, t.mnc, t.plmn ?? null, t.operator,
+        t.siteId, t.cellId, t.btsId ?? null, t.serviceProvider ?? null, t.serviceArea ?? null,
+        t.siteType ?? null, t.switchMake ?? null, t.switchModel ?? null, t.stateId ?? null,
+        t.tspName ?? null, t.mscIp ?? null, t.ecgi ?? null, t.cgi ?? null, t.enbId ?? null,
+        t.gnbId ?? null, t.sectorId ?? null, t.pci ?? null, t.earfcn ?? null, t.uarfcn ?? null,
+        t.arfcn ?? null, t.tac ?? null, t.lac ?? null, t.mcc, t.mnc, t.plmn ?? null, t.operator,
         t.operatorShortName ?? null, t.vendor, t.controller ?? null, t.rnc ?? null, t.bsc ?? null,
         t.rncId ?? null, t.rncIp ?? null, t.latitude, t.longitude, t.antennaHeightM ?? null,
         t.azimuthDeg ?? null, t.beamWidthDeg ?? null, t.frequencyBand ?? null, t.technology,
@@ -81,12 +85,33 @@ export class PostgresSimSeeder {
         t.createdAt.toISOString(), JSON.stringify(t),
       );
     }
+    // The VALUES list is parameterized, so PostgreSQL infers every column as
+    // text. A `SELECT ... FROM (VALUES ...)` path does NOT get the target
+    // column types coerced (unlike a direct INSERT...VALUES), so non-text
+    // columns must be cast explicitly.
+    const casts: Record<string, string> = {
+      pci: '::integer',
+      earfcn: '::integer',
+      uarfcn: '::integer',
+      arfcn: '::integer',
+      antenna_height_m: '::integer',
+      azimuth_deg: '::integer',
+      beam_width_deg: '::integer',
+      max_users: '::integer',
+      current_load_pct: '::integer',
+      latitude: '::double precision',
+      longitude: '::double precision',
+      coverage_radius_m: '::double precision',
+      created_at: '::timestamptz',
+      properties: '::jsonb',
+    };
+    const selectList = cols.map((c) => `c.${c}${casts[c] ?? ''}`).join(', ');
     const updateCols = cols.filter((c) => c !== 'site_id');
     const updates = updateCols.map((c) => `${c} = EXCLUDED.${c}`).join(', ');
     await pool.query(
       `
       INSERT INTO sim_cell_towers (${cols.join(', ')}, geometry)
-      SELECT c.*, ST_SetSRID(ST_MakePoint(c.longitude, c.latitude), 4326)
+      SELECT ${selectList}, ST_SetSRID(ST_MakePoint(c.longitude::double precision, c.latitude::double precision), 4326)
       FROM (VALUES ${groups.join(', ')}) AS c(${cols.join(', ')})
       ON CONFLICT (site_id) DO UPDATE SET ${updates};
       `,

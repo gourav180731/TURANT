@@ -24,6 +24,17 @@ export function makeRangeInt(rand: () => number, min: number, max: number): () =
   return () => min + Math.floor(rand() * span);
 }
 
+/**
+ * Approx standard normal via Box–Muller (two uniforms → one Gaussian sample).
+ * Used for realistic spatial clustering: sites jitter around a hotspot with a
+ * bell-shaped offset rather than a uniform spread.
+ */
+export function gaussian(rand: () => number): number {
+  const u = Math.max(rand(), Number.EPSILON);
+  const v = rand();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
 /** Pick one element from an array (weighted by `weight` when provided). */
 export function pickWeighted<T extends { weight: number }>(rand: () => number, items: readonly T[]): T {
   let total = 0;

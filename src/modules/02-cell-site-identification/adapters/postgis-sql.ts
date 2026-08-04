@@ -40,7 +40,7 @@ export function buildTowerZoneQuery(cfg: ParsedEnvConfig, zone: GeoZone, limit: 
   }
 
   const coverageMatch = radiusModel
-    ? `(ST_DWithin((${pointExpr})::geography, zone_geom::geography, ${colRadius}))`
+    ? `(ST_DWithin((${pointExpr})::geography, z.geom::geography, ${colRadius}))`
     : `(ST_Intersects(${colGeom}, zone_geom))`;
 
   const selectCoverage = radiusModel

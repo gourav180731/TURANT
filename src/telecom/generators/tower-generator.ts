@@ -1,13 +1,19 @@
 /**
- * Cell tower generator — creates a realistic, internally-consistent synthetic
- * radio network for the configured region.
+ * Cell tower / BTS generator — creates a realistic, internally-consistent
+ * synthetic radio network for the configured region.
  *
- * - Towers are spread across the region areas with per-area jitter (~±6 km).
+ * - Sites cluster around district hotspots: a hotspot is picked weighted by its
+ *   locality density and each site jitters around it with a clamped Gaussian
+ *   (~3 km σ), so urban cores are denser than the periphery.
  * - RAT split matches the configured TECH_*_PCT distribution (20/20/40/20).
  * - Radio planning params (ARFCN/UARFCN/EARFCN, PCI, band, maxUsers,
  *   coverage radius, azimuth) are derived from the tower's RAT so every field
  *   is plausible for that technology.
- * - Cell ids are unique and start near the canonical sample (9C81-style hex).
+ * - Every record carries the C-DOT master-dataset fields (bts_id, service
+ *   provider/tsp, service_area, site_type, switch_make/model, state_id,
+ *   rnc_id, msc_ip) with realistic combinations.
+ * - Cell ids, site ids and BTS ids are all unique; operators are distributed
+ *   by realistic market share (MTNL/BSNL smaller, Jio/Airtel/VI dominant).
  */
 
 import type { TelecomCellTower } from '../entities/cell-tower.js';
@@ -17,10 +23,16 @@ import {
   CONTROLLERS,
   DELHI_NCR_AREAS,
   OPERATORS,
+  SERVICE_AREA_BY_STATE,
+  SITE_TYPES,
+  STATE_ID_BY_STATE,
+  SWITCH_MAKES,
+  SWITCH_MODELS,
   VENDORS,
   type OperatorProfile,
+  type RegionArea,
 } from './geography.js';
-import { makeRangeInt, pickWeighted, shuffle } from './prng.js';
+import { gaussian, makeRangeInt, pickWeighted, shuffle } from './prng.js';
 
 export interface TowerGenContext {
   count: number;
@@ -47,6 +59,37 @@ export const TECH_PROFILES: Record<TelecomTechnology, TechProfile> = {
   NR5G: { band: 'n78', earfcnRange: [636000, 660000], pciRange: [0, 1007], maxUsersRange: [1500, 3000], radiusRangeM: [250, 1000], heightRangeM: [15, 40] },
 };
 
+/** Site-type probability (urban Delhi is macro/rooftop heavy). */
+const SITE_TYPE_WEIGHTS: Readonly<Record<string, number>> = {
+  MACRO: 40,
+  ROOFTOP: 25,
+  TOWER: 15,
+  MICRO: 12,
+  INDOOR: 8,
+};
+
+/** Vendor → switch-make name (C-DOT `switch_make` is proper case). */
+const SWITCH_MAKE_BY_VENDOR: Readonly<Record<string, string>> = {
+  HUAWEI: 'Huawei',
+  NOKIA: 'Nokia',
+  ERICSSON: 'Ericsson',
+  SAMSUNG: 'Samsung',
+  ZTE: 'ZTE',
+};
+
+/** Clamp a Gaussian spatial offset so sites stay inside the NCR box. */
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, v));
+}
+
+/** Pick a hotspot area weighted by locality density. */
+function pickHotspot(rand: () => number): RegionArea {
+  return pickWeighted(
+    rand,
+    DELHI_NCR_AREAS.map((a) => ({ ...a, weight: a.weight ?? 1 })),
+  );
+}
+
 /** Build the ordered list of RAT values honoring the configured percentages. */
 export function planTechnologies(ctx: TowerGenContext, rand: () => number): TelecomTechnology[] {
   const total = ctx.count;
@@ -66,9 +109,7 @@ export function planTechnologies(ctx: TowerGenContext, rand: () => number): Tele
 /** Generate `ctx.count` towers with unique ids/geometry within the region. */
 export function generateTowers(ctx: TowerGenContext, rand: () => number): TelecomCellTower[] {
   const techs = planTechnologies(ctx, rand);
-  const areas = DELHI_NCR_AREAS;
   const now = new Date();
-  const operators = OPERATORS;
 
   const azimuth = makeRangeInt(rand, 0, 359);
   const beamWidth = makeRangeInt(rand, 60, 120);
@@ -76,29 +117,53 @@ export function generateTowers(ctx: TowerGenContext, rand: () => number): Teleco
   const vendorPick = () => VENDORS[Math.floor(rand() * VENDORS.length)]!;
   const controllerPick = () => CONTROLLERS[Math.floor(rand() * CONTROLLERS.length)]!;
   const backhaulPick = () => BACKHAUL_TYPES[Math.floor(rand() * BACKHAUL_TYPES.length)]!;
+  const switchMakePick = () => SWITCH_MAKES[Math.floor(rand() * SWITCH_MAKES.length)]!;
+  const rncSerial = makeRangeInt(rand, 1000, 9999);
+  const mscOctet = () => 1 + Math.floor(rand() * 254);
 
   const towers: TelecomCellTower[] = new Array(ctx.count);
   const CELL_BASE = 0x9c81; // start hex cell ids near the canonical sample
 
   for (let i = 0; i < ctx.count; i++) {
     const technology = techs[i]!;
-    const area = areas[Math.floor(rand() * areas.length)]!;
+    const area = pickHotspot(rand);
     const op = pickWeighted<OperatorProfile & { weight: number }>(rand, [
-      ...operators.map((o) => ({ ...o, weight: o.shortName === 'MTNL' ? 6 : 1 })),
+      ...OPERATORS.map((o) => ({ ...o, weight: o.weight ?? 1 })),
     ]);
     const profile = TECH_PROFILES[technology];
-    const lat = area.latitude + (rand() - 0.5) * 0.12;
-    const lng = area.longitude + (rand() - 0.5) * 0.12;
+
+    // Cluster: bell-shaped offset (~3 km σ) around the district hotspot.
+    const dLat = clamp(gaussian(rand) * 0.028, -0.06, 0.06);
+    const dLng = clamp(gaussian(rand) * 0.028, -0.06, 0.06);
+    const lat = area.latitude + dLat;
+    const lng = area.longitude + dLng;
+
     const cellId = (CELL_BASE + i).toString(16).toUpperCase();
     const nodeId = 117 + Math.floor(rand() * 1000);
     const maxUsers = makeRangeInt(rand, profile.maxUsersRange[0], profile.maxUsersRange[1])();
     const coverageRadiusM = makeRangeInt(rand, profile.radiusRangeM[0], profile.radiusRangeM[1])();
     const siteId = String(12977 + i);
+    const btsId = `${op.shortName}-${String(100000 + i).padStart(6, '0')}`;
+    const vendor = vendorPick();
+    const latitude = Number(lat.toFixed(6));
+    const longitude = Number(lng.toFixed(6));
 
     const tower: TelecomCellTower = {
       id: siteId,
       siteId,
       cellId,
+      btsId,
+      serviceProvider: op.shortName,
+      serviceArea: SERVICE_AREA_BY_STATE[area.state] ?? area.state,
+      siteType: pickWeighted(
+        rand,
+        SITE_TYPES.map((s) => ({ tag: s, weight: SITE_TYPE_WEIGHTS[s] ?? 5 })),
+      ).tag as (typeof SITE_TYPES)[number],
+      switchMake: rand() < 0.6 ? (SWITCH_MAKE_BY_VENDOR[vendor] ?? 'Huawei') : switchMakePick(),
+      switchModel: SWITCH_MODELS[technology][Math.floor(rand() * SWITCH_MODELS[technology].length)]!,
+      stateId: STATE_ID_BY_STATE[area.state] ?? '7',
+      tspName: op.fullName,
+      mscIp: `10.${op.mnc}.${mscOctet()}.${mscOctet()}`,
       ecgi: technology === 'LTE' || technology === 'NR5G' ? `${op.mcc}${op.mnc}${nodeId}${cellId}` : undefined,
       cgi: technology === 'GSM' || technology === 'UMTS' ? `${op.mcc}${op.mnc}${cellId}` : undefined,
       enbId: technology === 'LTE' ? String(nodeId) : undefined,
@@ -115,14 +180,14 @@ export function generateTowers(ctx: TowerGenContext, rand: () => number): Teleco
       plmn: `${op.mcc}-${op.mnc}-${nodeId}-${cellId}`,
       operator: op.fullName,
       operatorShortName: op.shortName,
-      vendor: vendorPick(),
+      vendor,
       controller: technology === 'GSM' ? 'MSOFT3000' : controllerPick(),
       rnc: technology === 'UMTS' ? 'RNC-HW' : undefined,
       bsc: technology === 'GSM' ? 'BSC-CDBMA' : undefined,
-      rncId: technology === 'UMTS' || technology === 'LTE' ? 'default_rnc_id' : undefined,
+      rncId: `RNC-${op.shortName}-${rncSerial()}`,
       rncIp: `10.${Math.floor(rand() * 255)}.${Math.floor(rand() * 255)}.${Math.floor(rand() * 255)}`,
-      latitude: Number(lat.toFixed(6)),
-      longitude: Number(lng.toFixed(6)),
+      latitude,
+      longitude,
       antennaHeightM: makeRangeInt(rand, profile.heightRangeM[0], profile.heightRangeM[1])(),
       azimuthDeg: azimuth(),
       beamWidthDeg: beamWidth(),
@@ -139,7 +204,7 @@ export function generateTowers(ctx: TowerGenContext, rand: () => number): Teleco
       city: area.city,
       zone: area.zone,
       pinCode: area.pinCode,
-      geometry: { type: 'Point', coordinates: [lng, lat] },
+      geometry: { type: 'Point', coordinates: [longitude, latitude] },
       createdAt: now,
     };
     towers[i] = tower;
