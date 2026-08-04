@@ -11,4 +11,5 @@ export { TowerResolver } from './resolver.js';
 export type { TowerSource, FindTowersOptions } from './tower-source.js';
 export { PostgisTowerSource } from './adapters/postgis-tower-source.js';
 export { HttpTowerSource } from './adapters/http-tower-source.js';
+export { MemoryTowerSource } from './adapters/memory-tower-source.js';
 export { zoneToGeoJson } from './tower-source.js';

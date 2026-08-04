@@ -3,12 +3,14 @@ import { traceStore } from '../../tracing/trace-store.js';
 import type { CellTower, GeoZone } from '../../types/tower.js';
 import { getAlertLogger } from '../../utils/logger.js';
 import { HttpTowerSource } from './adapters/http-tower-source.js';
+import { MemoryTowerSource } from './adapters/memory-tower-source.js';
 import { PostgisTowerSource } from './adapters/postgis-tower-source.js';
 import type { FindTowersOptions, TowerSource } from './tower-source.js';
 
 const SOURCES: Record<string, () => TowerSource> = {
   postgis: () => new PostgisTowerSource(),
   http: () => new HttpTowerSource(),
+  memory: () => new MemoryTowerSource(),
 };
 
 /**
@@ -68,7 +70,7 @@ export class TowerResolver {
 
   getSource(mode: string): TowerSource {
     const factory = SOURCES[mode];
-    if (!factory) throw new Error(`Unknown TOWER_SOURCE_MODE "${mode}" (expected postgis|http)`);
+    if (!factory) throw new Error(`Unknown TOWER_SOURCE_MODE "${mode}" (expected postgis|http|memory)`);
     return factory();
   }
 }

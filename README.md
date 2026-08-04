@@ -60,13 +60,15 @@ npm run typecheck
 | 14| Capacity / load documentation                 | `scripts/load-test/` + `docs/architecture.md`                         |
 
 **Build status:** modules 01–02, 05–13 are implemented, tested and **wired into
-the live pipeline** — a real incoming CAP alert automatically flows through
-ingestion (01) and tower resolution (02), then halts cleanly and loudly at
-subscriber matching because modules 03–04 are genuinely blocked on the real
-C-DOT subscriber DB (their `PLAN.md` documents the interface they wait on).
-Every implemented module is built against the real protocol/interface; the ones
-whose data source has not arrived yet report loudly and are marked **AWAITING**
-in the table below.
+the live pipeline**. Modules 03–04 (subscriber matching) wait on the real C-DOT
+subscriber database — and are covered by a built-in **telecom simulation**
+(`src/telecom/`, see below): a synthetic but structurally-valid subscriber/tower
+network that stands in for the C-DOT DB. With `USE_DUMMY_SUBSCRIBER_DB=true` the
+whole pipeline (01 → 02 → 03/04 → 05 → 13) runs end-to-end with **no code
+changes**; with it false, the pipeline halts loudly at subscriber-matching
+exactly as before. Every implemented module is built against the real
+protocol/interface; the ones whose real data source has not arrived yet report
+loudly and are marked **AWAITING** in the table below.
 
 Supporting code:
 - `src/config/` — all connections/credentials via env (zod-validated)
@@ -83,8 +85,8 @@ Supporting code:
 |--------|--------------------------------------------------------|----------------------------|
 | 01 CAP | CAP XML feed (push URL or drop dir), language codes    | Built; tested; **wired into live pipeline** |
 | 02 Towers | PostGIS DB (`DATABASE_URL`) + tower table schema    | Built; tested; wired; **AWAITING DB creds** |
-| 03 Subscribers | Subscriber DB + Redis (`REDIS_URL`)               | Designed; pipeline halts here + reports it; **AWAITING DB** |
-| 04 Matching | Module 03 cache populated                             | Designed; pipeline halts here + reports it; depends on 03 |
+| 03 Subscribers | Subscriber DB + Redis (`REDIS_URL`)               | Built; tested; sim drop-in (`USE_DUMMY_SUBSCRIBER_DB`); **AWAITING DB for the real path** |
+| 04 Matching | Module 03 cache populated                             | Built; tested; wired through the sim matcher; depends on 03 |
 | 05 Dedup | none                                                  | Built; tested; wired into live pipeline |
 | 06 Expiry | none (uses CAP `expires`)                             | Built; tested — expiry halts retries mid-backoff; wired |
 | 07 SMPP | `SMPP_HOST/PORT/SYSTEM_ID/PASSWORD/SYSTEM_TYPE`       | Built; tested; wired; **AWAITING CREDENTIALS** |
@@ -123,6 +125,9 @@ arrives you only edit `.env` — **zero code changes**.
   DLR counts + latency, built from real receipts by module 11.
 - `POST /api/v1/debug/towers/resolve` — only with `ENABLE_DEBUG_ENDPOINTS=true`;
   exercises module 02 against the real tower DB once connected.
+- `GET /api/v1/debug/sim` · `GET /api/v1/debug/sim/towers` ·
+  `GET /api/v1/debug/sim/subscribers?cellId=...` — only with the sim on + debug
+  endpoints enabled; introspect the simulated network.
 
 ## Latency tracing (t0–t5) — the product metric
 
@@ -162,6 +167,57 @@ Every stage logs structured JSON keyed by `alertId`
 `retry.round`, `dlr.received`, `ews_callback.delivered`, …). Set
 `AUDIT_LOG_FILE` to append JSON-lines for the traceability record. Modules 03–04
 will log their own events when the subscriber DB arrives.
+
+## Telecom simulation — modules 03/04 drop-in (no C-DOT DB needed)
+
+Modules 03/04 genuinely need C-DOT's subscriber database. Until it is
+connected, TURANT ships a built-in simulation (`src/telecom/`) that is a
+**drop-in replacement**: the same `SubscriberRepository` interface the real
+C-DOT adapter will implement, and the same `SubscriberMatcher` contract modules
+03/04 already wait on. It is not fake data bolted onto the pipeline — the
+pipeline still runs its real tower resolution, matching, dedup and submission
+code; only the *source* of subscribers is simulated.
+
+```bash
+# .env — full end-to-end pipeline without any database
+USE_DUMMY_SUBSCRIBER_DB=true
+SUBSCRIBER_DB_MODE=memory          # or postgres (see below)
+DUMMY_TOWER_COUNT=2000             # cells in the region
+DUMMY_SUBSCRIBER_COUNT=100000      # subscribers attached to those cells
+MIN_USERS_PER_TOWER=10
+MAX_USERS_PER_TOWER=500
+SIM_SEED=20260902                  # deterministic, reproducible datasets
+ACTIVE_SUBSCRIBER_PCT=85           # ~85% ACTIVE, rest INACTIVE
+SEED_BATCH_SIZE=1000               # deterministic streaming batch
+```
+
+Properties:
+
+- **Structurally valid & internally consistent.** IMSI `404/405 + MNC + MSIN`
+  (15 digits, the canonical C-DOT shape), MSISDN `91` + 10 digits starting 6–9,
+  Luhn-valid IMEI, LAC/TAC, cell ids, PLMN (`404-68-…`), tower vendor/controller/
+  backhaul, radio planning params (ARFCN/UARFCN/EARFCN, PCI, band, azimuth,
+  height, capacity). A subscriber's RAT always matches its tower's RAT;
+  `last_seen` is always within the previous 48h; towers sit inside the region
+  (Delhi NCR) with per-area jitter.
+- **Deterministic.** One `SIM_SEED` drives a seeded PRNG (no `Math.random` in
+  datasets). Every batch derives from `(SIM_SEED, batch index)`, so a dataset is
+  fully reproducible, parallel seeders take disjoint identity ranges, and
+  Postgres seeding is resumable after any crash.
+- **1K → 300M via env only.** `SUBSCRIBER_DB_MODE=postgres` seeds the same
+  generator into real PostgreSQL (`scripts/seed-telecom.ts` / `npm run seed`)
+  with `SUBSCRIBER_PARTITIONS` (HASH(imsi) partitioning), `SEED_WORKERS`
+  concurrent slices and `SEED_USE_COPY` (COPY FROM STDIN). Only the counts in
+  `.env` change; nothing in code.
+- **Honest failure.** `USE_DUMMY_SUBSCRIBER_DB=false` makes the repository
+  factory throw `Real C-DOT Subscriber Repository Not Configured` — the app
+  keeps running and the pipeline halts loudly at subscriber-matching, as it did
+  before this module existed.
+
+When C-DOT connects the real database, point `SUBSCRIBER_COL_*` at the real
+schema (same config-driven pattern as the tower adapter) and implement
+`SubscriberRepository` against it — the pipeline code does not change. See
+`docs/telecom-simulation.md` for the full design.
 
 ## Running against the real tower DB (module 02)
 

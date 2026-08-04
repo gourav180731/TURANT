@@ -16,6 +16,11 @@ import { flushLogger, getLogger } from './utils/logger.js';
 import { runAlertPipeline } from './pipeline/alert-pipeline.js';
 import { createPipelineStatusRoutes } from './pipeline/routes.js';
 import { pipelineStatusStore } from './pipeline/pipeline-status.js';
+import {
+  createSubscriberRepository,
+  createTelecomSimDebugRoutes,
+  TelecomSimulator,
+} from './telecom/index.js';
 
 const cfg = loadConfig();
 const logger = getLogger();
@@ -90,12 +95,26 @@ if (cfg.ENABLE_DEBUG_ENDPOINTS) {
   logger.warn('DEBUG endpoints enabled — intended for C-DOT staging only');
 }
 
+// The telecom simulation (modules 03/04 drop-in). Booted before the server
+// listens so a matching pipeline can never race an unregistered matcher.
+if (cfg.USE_DUMMY_SUBSCRIBER_DB) {
+  if (cfg.ENABLE_DEBUG_ENDPOINTS) {
+    app.use('/api/v1/debug', createTelecomSimDebugRoutes(createSubscriberRepository(cfg)));
+  }
+}
+
 /**
  * Start the listening server. Only runs when index.ts is the main entrypoint
  * (node dist/index.js, tsx src/index.ts); importing `app` from tests never
  * binds a port or starts background work.
  */
-function startServer(): void {
+async function startServer(): Promise<void> {
+  if (cfg.USE_DUMMY_SUBSCRIBER_DB) {
+    const sim = new TelecomSimulator(cfg);
+    const boot = await sim.boot();
+    logger.info(boot, 'telecom-sim.booted');
+  }
+
   // Wire the DLR listener onto the shared SMPP session when credentials exist.
   if (cfg.SMPP_HOST && cfg.SMPP_SYSTEM_ID) {
     getSmppSession(cfg)
@@ -125,5 +144,5 @@ function startServer(): void {
 
 const isMain = process.argv[1] !== undefined && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
 if (isMain) {
-  startServer();
+  void startServer();
 }

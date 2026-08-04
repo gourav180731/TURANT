@@ -41,3 +41,8 @@ export function registerSubscriberMatcher(matcher: SubscriberMatcher): void {
 export function getSubscriberMatcher(): SubscriberMatcher | null {
   return registered;
 }
+
+/** Unregister the matcher (test isolation; never called by the running app). */
+export function resetSubscriberMatcher(): void {
+  registered = null;
+}

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  TURANT TEST FIXTURE — NOT pipeline data.
+  A CAP 1.2 document centered on Delhi NCR so the telecom simulation's
+  in-memory tower source resolves real (synthetic) towers, proving the full
+  01 → 02 → 03/04 → 05 → 13 chain end-to-end without a database.
+-->
+<alert xmlns="urn:oasis:names:tc:emergency:cap:1.2">
+  <identifier>CDOT-EWS-2026-DELHI-NCR-001</identifier>
+  <sender>ews@cdot.in</sender>
+  <sent>2026-08-04T09:00:00+05:30</sent>
+  <status>Actual</status>
+  <msgType>Alert</msgType>
+  <source>NDMA Test Drill</source>
+  <scope>Public</scope>
+  <code>IND-EQ-01</code>
+  <info>
+    <language>en-IN</language>
+    <category>Geo</category>
+    <event>Earthquake</event>
+    <responseType>Shelter</responseType>
+    <urgency>Immediate</urgency>
+    <severity>Severe</severity>
+    <certainty>Likely</certainty>
+    <effective>2026-08-04T08:30:00+05:30</effective>
+    <onset>2026-08-04T09:00:00+05:30</onset>
+    <!-- Far-future expiry so the submission leg exercises awaiting-credentials
+         (no SMSC) instead of halting on expiry in tests. -->
+    <expires>2099-01-01T00:00:00+05:30</expires>
+    <senderName>India Meteorological Department</senderName>
+    <headline>Earthquake alert for Delhi NCR</headline>
+    <description>Moderate tremors expected across the National Capital Region.</description>
+    <instruction>Move away from buildings. Do not use lifts.</instruction>
+    <area>
+      <areaDesc>Delhi NCR</areaDesc>
+      <circle>28.5500,77.2500 30</circle>
+      <geocode>
+        <valueName>SAME</valueName>
+        <value>110001</value>
+      </geocode>
+    </area>
+  </info>
+</alert>

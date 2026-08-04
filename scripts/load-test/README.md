@@ -39,6 +39,25 @@ k6 run --env BASE_URL=http://localhost:8080 --env CAP_XML_FILE=./cap.xml \
 k6 run --env BASE_URL=http://localhost:8080 --env CAP_XML_FILE=./cap.xml cap-ingest.k6.js
 ```
 
+## Subscriber-matching throughput (telecom simulation)
+
+`subscriber-lookup.k6.js` drives the whole chain against the simulated
+subscriber database — ingest → tower resolution → subscriber matching → dedup →
+submission — and asserts towers resolved, recipients matched, and the run
+completed. Boot the app with the sim on first:
+
+```bash
+USE_DUMMY_SUBSCRIBER_DB=true SUBSCRIBER_DB_MODE=memory \
+DUMMY_TOWER_COUNT=2000 DUMMY_SUBSCRIBER_COUNT=100000 \
+npx tsx src/index.ts
+
+k6 run --env BASE_URL=http://localhost:8080 \
+       --env CAP_XML_FILE=./cap-delhi-ncr.xml subscriber-lookup.k6.js
+```
+
+Record `expectedRecipients/s` (matched subscribers per second) and the end-to-end
+ingest→status p95 under each stage.
+
 ## What to record (per stage / scenario)
 
 | Stage | VUs | Observed t0→p90 (ms) | Observed t0→first (ms) | msgs/s | Error % | Notes |

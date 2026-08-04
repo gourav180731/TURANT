@@ -23,7 +23,7 @@ const strFromEnv = (defaultValue: string) => z.string().default(defaultValue);
 
 const maybeStr = z.string().optional().transform((v) => (v === '' ? undefined : v));
 
-const TOWER_SOURCE_MODES = ['postgis', 'http'] as const;
+const TOWER_SOURCE_MODES = ['postgis', 'http', 'memory'] as const;
 const COVERAGE_MODELS = ['radius', 'polygon'] as const;
 const BIND_MODES = ['transceiver', 'transmitter'] as const;
 const DELIVERY_STRATEGIES = ['single-attempt', 'retry'] as const;
@@ -135,6 +135,88 @@ export const envSchema = z.object({
   // ---- Latency tracing ----
   /** Hours a per-alert trace record is retained (in memory + Redis). */
   TRACE_TTL_HOURS: intFromEnvNonZero(24),
+
+  // ---- Telecom simulation layer (modules 03/04 drop-in) ---------------------
+  // When true, TURANT uses the built-in telecom simulation (a synthetic but
+  // structurally-valid subscriber/tower network) so the whole pipeline —
+  // including subscriber matching — runs exactly as it will against the real
+  // C-DOT subscriber database. When false, the repository factory throws
+  // "Real C-DOT Subscriber Repository Not Configured" and the pipeline halts
+  // loudly at subscriber-matching, exactly as before this module existed.
+  USE_DUMMY_SUBSCRIBER_DB: boolFromEnv,
+  /**
+   * Where the simulation lives:
+   *   memory   : in-process store (tests / local dev, no DB needed)
+   *   postgres : real PostgreSQL tables (the 1K → 300M path)
+   */
+  SUBSCRIBER_DB_MODE: z.enum(['memory', 'postgres']).default('memory'),
+  /** Geographic region the synthetic network is generated for. */
+  SIM_REGION: strFromEnv('delhi-ncr'),
+  /** Seed for the deterministic PRNG (reproducible datasets, resume-safe). */
+  SIM_SEED: intFromEnvNonZero(20260902),
+
+  // ---- Simulation scale (the ONLY thing that changes from 1K → 300M) --------
+  DUMMY_SUBSCRIBER_COUNT: intFromEnvNonZero(1000),
+  DUMMY_TOWER_COUNT: intFromEnvNonZero(100),
+  MIN_USERS_PER_TOWER: intFromEnvNonZero(10),
+  MAX_USERS_PER_TOWER: intFromEnvNonZero(500),
+  /** Approx % of subscribers ACTIVE (rest INACTIVE). 0..100. */
+  ACTIVE_SUBSCRIBER_PCT: z.coerce.number().int().min(0).max(100).default(85),
+  SEED_BATCH_SIZE: intFromEnvNonZero(1000),
+  /** Parallel seeding worker slices (Postgres mode). 1 = sequential. */
+  SEED_WORKERS: intFromEnvNonZero(1),
+  /** Postgres seeder path: true = COPY via staging table; false = batched INSERT. */
+  SEED_USE_COPY: boolFromEnv,
+  /**
+   * Hash partition modulus for the subscribers table (0 = no partitioning).
+   * Use 0 for dev; 32–256 for the 10M–300M production path.
+   */
+  SUBSCRIBER_PARTITIONS: intFromEnv(0),
+  /**
+   * When true, the Postgres seeder drops and recreates the sim tables before
+   * seeding (a full reproducible reseed). When false (default) it resumes from
+   * the last checkpoint and inserts only what is missing — safe to re-run.
+   */
+  SIM_SEED_RESET: boolFromEnv,
+  /** Subscribers fetched per cell_id chunk in repository lookups. */
+  SUBSCRIBER_LOOKUP_CHUNK_SIZE: intFromEnvNonZero(1000),
+
+  // ---- RAT (radio access technology) distribution, % must sum to 100 -------
+  TECH_GSM_PCT: intFromEnv(20),
+  TECH_UMTS_PCT: intFromEnv(20),
+  TECH_LTE_PCT: intFromEnv(40),
+  TECH_NR5G_PCT: intFromEnv(20),
+
+  // ---- C-DOT subscriber schema mapping (same config-driven pattern as the
+  //      PostGIS tower adapter — point these at the real tables later) -------
+  SUBSCRIBER_COL_IMSI: strFromEnv('imsi'),
+  SUBSCRIBER_COL_CELL_ID: strFromEnv('cell_id'),
+  SUBSCRIBER_COL_TECHNOLOGY: strFromEnv('technology'),
+  SUBSCRIBER_COL_STATUS: strFromEnv('status'),
+  SUBSCRIBER_COL_LAST_SEEN: strFromEnv('last_seen'),
+}).superRefine((val, ctx) => {
+  const techSum = val.TECH_GSM_PCT + val.TECH_UMTS_PCT + val.TECH_LTE_PCT + val.TECH_NR5G_PCT;
+  if (techSum !== 100) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['TECH_GSM_PCT'],
+      message: `RAT distribution must sum to 100 (got ${techSum})`,
+    });
+  }
+  if (val.MIN_USERS_PER_TOWER > val.MAX_USERS_PER_TOWER) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['MIN_USERS_PER_TOWER'],
+      message: 'MIN_USERS_PER_TOWER must be <= MAX_USERS_PER_TOWER',
+    });
+  }
+  if (val.SUBSCRIBER_DB_MODE === 'postgres' && !val.DATABASE_URL) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['SUBSCRIBER_DB_MODE'],
+      message: 'SUBSCRIBER_DB_MODE=postgres requires DATABASE_URL',
+    });
+  }
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;
