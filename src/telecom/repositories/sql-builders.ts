@@ -135,6 +135,8 @@ export function buildCopyFromSubscribersSql(table: string): string {
   return `COPY ${table} (${SUBSCRIBER_COLUMNS.join(', ')}) FROM STDIN WITH (FORMAT text, DELIMITER E'\\t', NULL '\\N')`;
 }
 
+const PG_BIND_MAX_PARAMS = 32767;
+
 /** Idempotent batched upsert keyed on IMSI. */
 export function buildUpsertSubscribersSql(table: string, batch: readonly TelecomSubscriber[]): { text: string; values: unknown[] } {
   const cols = SUBSCRIBER_COLUMNS;
@@ -149,6 +151,13 @@ export function buildUpsertSubscribersSql(table: string, batch: readonly Telecom
       values.push(columnValue(cols[c]!, row));
     }
     rowGroups.push(`(${group.join(', ')})`);
+  }
+  if (values.length > PG_BIND_MAX_PARAMS) {
+    throw new Error(
+      `PostgreSQL Bind parameter limit exceeded: ${values.length} params` +
+        ` (${batch.length} rows × ${placeholdersPerRow} cols). Limit is ${PG_BIND_MAX_PARAMS}.` +
+        ` Reduce the batch to ≤ ${Math.floor(PG_BIND_MAX_PARAMS / placeholdersPerRow)} rows.`,
+    );
   }
   const updates = cols
     .filter((col) => col !== 'imsi' && col !== 'id')

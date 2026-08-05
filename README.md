@@ -5,10 +5,7 @@ alerts. When a disaster alert (CAP XML) is issued for a geographic zone, TURANT
 identifies the cell towers in that zone, finds the subscribers attached to those
 towers, deduplicates them, and pushes SMS through a telecom SMSC (SMPP) — fast,
 with full audit feedback, and strictly within the alert's validity window.
-
-Built as an intern project at C-DOT. **This is a real, production-oriented
-system**: every module consumes real C-DOT data through configuration — nothing
-is stubbed. Modules whose data source has not arrived yet are built against the
+nothing is stubbed. Modules whose data source has not arrived yet are built against the
 real protocol/interface and are explicitly marked **AWAITING** below.
 
 ---
@@ -111,6 +108,18 @@ arrives you only edit `.env` — **zero code changes**.
   status endpoint. After ingest the automatic pipeline runs asynchronously
   (ingest → tower resolution → subscriber matching → …). `400` on malformed
   CAP, `413` when over `CAP_MAX_XML_BYTES`.
+- `POST /api/v1/alerts/manual` — dispatch a manual alert from a drawn polygon.
+  Accepts JSON `{ polygon: [[lat,lng],...], message, severity, expiresInMinutes,
+  hazardType? }`. The backend synthesizes a real CAP 1.2 document (closed ring,
+  live `sent`/`expires`) and runs it through the *same* ingest → pipeline path as
+  the CAP XML endpoint. `400` on an invalid/self-intersecting/under-sized polygon
+  or payload, `202` with the same shape as `POST /api/v1/alerts/cap`.
+- `GET /api/v1/alerts/:capIdentifier/towers` — the real towers module 02 matched
+  for an alert (id, cell id, lat/lng, coverage radius). `404` until tower
+  resolution has run.
+- `GET /api/v1/sim/clusters` — the configured region's city-cluster hints
+  (centroid + radius km) that the demo UI draws on the map (`delhi-ncr` = 1,
+  `india` = 18).
 - `GET /api/v1/alerts/:capIdentifier/pipeline-status` — how far the automatic
   pipeline got: `running | halted | completed`, the farthest stage, the halt
   reason when one exists (e.g. `awaiting subscriber data — modules 03/04 not
@@ -128,6 +137,51 @@ arrives you only edit `.env` — **zero code changes**.
 - `GET /api/v1/debug/sim` · `GET /api/v1/debug/sim/towers` ·
   `GET /api/v1/debug/sim/subscribers?cellId=...` — only with the sim on + debug
   endpoints enabled; introspect the simulated network.
+
+## Manual polygon alert (demo UI)
+
+`frontend/` is a small Vite + React + Leaflet map console: draw a polygon over
+any of the city clusters, fill in the alert, and send it to
+`POST /api/v1/alerts/manual` — the backend builds a real CAP 1.2 document from
+the polygon and runs the identical pipeline the CAP-XML feed uses. The console
+polls the pipeline status live (every 1s), renders the real matched-tower
+markers from `GET /api/v1/alerts/:capIdentifier/towers`, and shows a results
+panel with only real numbers: towers matched, subscribers matched, duplicates
+removed, expected recipients, messages submitted, and the real DLR `delivered`
+count (0 until SMPP receipts exist). There is no mock data anywhere in the UI.
+
+```bash
+cd frontend
+npm install
+npm run dev        # http://localhost:5173 (proxies /api → :3000)
+```
+
+For the whole chain to complete in-process:
+
+```bash
+# .env
+USE_DUMMY_SUBSCRIBER_DB=true
+SUBSCRIBER_DB_MODE=memory
+SIM_REGION=india      # all 18 city clusters (see below)
+```
+
+See `frontend/README.md` for details and the 18-cluster limitation (towers are
+generated around the 18 city centroids, not nationwide — a polygon far from any
+cluster honestly matches zero towers).
+
+### Pan-India dataset (18 city clusters)
+
+With `SIM_REGION=india` the telecom simulation spreads towers/subscribers over
+18 city clusters — North: Delhi NCR, Jaipur, Lucknow; West: Mumbai, Pune,
+Ahmedabad, Surat; South: Bangalore, Chennai, Hyderabad, Kochi; East: Kolkata,
+Patna, Bhubaneswar, Guwahati; Central: Bhopal, Indore, Nagpur. Each city carries
+a real centroid, a geographic `radiusKm` (bigger metros are wider) and a
+population-relative `weight`; the generator clusters sites with a city-sized
+clamped Gaussian so every tower lands inside its own city's bounds, and bigger
+cities get proportionally more sites. The single source of truth is
+`src/telecom/generators/india-city-clusters.ts`; the generator, the master
+seeder, and the frontend's map hints all derive from it. The default
+`SIM_REGION=delhi-ncr` preserves the original Delhi-only behaviour exactly.
 
 ## Latency tracing (t0–t5) — the product metric
 
@@ -198,8 +252,9 @@ Properties:
   Luhn-valid IMEI, LAC/TAC, cell ids, PLMN (`404-68-…`), tower vendor/controller/
   backhaul, radio planning params (ARFCN/UARFCN/EARFCN, PCI, band, azimuth,
   height, capacity). A subscriber's RAT always matches its tower's RAT;
-  `last_seen` is always within the previous 48h; towers sit inside the region
-  (Delhi NCR) with per-area jitter.
+  `last_seen` is always within the previous 48h; towers sit inside the configured
+  region (default: Delhi NCR; `SIM_REGION=india`: 18 city clusters) with
+  per-area/city jitter.
 - **Deterministic.** One `SIM_SEED` drives a seeded PRNG (no `Math.random` in
   datasets). Every batch derives from `(SIM_SEED, batch index)`, so a dataset is
   fully reproducible, parallel seeders take disjoint identity ranges, and

@@ -1,0 +1,148 @@
+:root {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: #0f172a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #f1f5f9;
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  height: 100vh;
+}
+
+#map {
+  height: 100%;
+  z-index: 0;
+}
+
+.panel {
+  overflow-y: auto;
+  padding: 16px 20px;
+  background: #ffffff;
+  border-left: 1px solid #e2e8f0;
+}
+
+.panel h1 {
+  font-size: 18px;
+  margin: 0 0 4px;
+}
+
+.hint {
+  font-size: 12px;
+  color: #475569;
+  margin: 0 0 16px;
+}
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.controls textarea,
+.controls input,
+.controls select {
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 9px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+}
+
+button {
+  font: inherit;
+  font-weight: 700;
+  font-size: 14px;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: #dc2626;
+  color: #fff;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+button.ghost {
+  background: transparent;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+  margin-top: 8px;
+}
+
+.error {
+  color: #b91c1c;
+  font-size: 12px;
+  margin: 4px 0 0;
+}
+
+.note {
+  color: #64748b;
+  font-size: 12px;
+  margin: 6px 0 0;
+}
+
+.results {
+  border-top: 1px solid #e2e8f0;
+  padding-top: 10px;
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+}
+
+.row span:first-child {
+  color: #475569;
+}
+
+.row span:last-child {
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.row span.completed {
+  color: #15803d;
+}
+
+.row span.halted {
+  color: #b91c1c;
+}
+
+.row span.running {
+  color: #b45309;
+}
+
+.row.reason {
+  color: #b91c1c;
+  background: #fef2f2;
+  border-radius: 6px;
+  padding: 6px 8px;
+  text-transform: none;
+}

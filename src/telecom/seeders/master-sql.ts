@@ -9,6 +9,8 @@ import type { TelecomCellTower } from '../entities/cell-tower.js';
  * without the extension).
  */
 
+const PG_BIND_MAX_PARAMS = 32767;
+
 /** C-DOT BTS column names, in insert order. */
 export const MASTER_COLUMNS = [
   'id',
@@ -143,6 +145,14 @@ export function buildMasterInsertSql(
     groups.push(`(${placeholders.join(', ')})`);
   }
 
+  const paramsPerRow = MASTER_COLUMNS.length;
+  if (values.length > PG_BIND_MAX_PARAMS) {
+    throw new Error(
+      `PostgreSQL Bind parameter limit exceeded: ${values.length} params` +
+        ` (${rows.length} rows × ${paramsPerRow} cols). Limit is ${PG_BIND_MAX_PARAMS}.` +
+        ` Reduce the batch to ≤ ${Math.floor(PG_BIND_MAX_PARAMS / paramsPerRow)} rows.`,
+    );
+  }
   const text = `
     INSERT INTO telecom_master (${MASTER_COLUMNS.join(', ')})
     VALUES ${groups.join(', ')};`;

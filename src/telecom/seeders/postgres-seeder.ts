@@ -14,8 +14,21 @@ import {
   serializeSubscriberCsv,
 } from '../repositories/sql-builders.js';
 import { buildCheckpointsDdl, buildSimCellTowersDdl, buildSubscribersDdl } from './ddl.js';
+import { SUBSCRIBER_COLUMNS } from '../repositories/sql-builders.js';
 
 const log = getLogger();
+
+const PG_BIND_MAX_PARAMS = 32767;
+
+function assertParamsWithinBindLimit(values: readonly unknown[], paramsPerRow: number, rowCount: number): void {
+  if (values.length > PG_BIND_MAX_PARAMS) {
+    throw new Error(
+      `PostgreSQL Bind parameter limit exceeded: ${values.length} params` +
+        ` (${rowCount} rows × ${paramsPerRow} cols). Limit is ${PG_BIND_MAX_PARAMS}.` +
+        ` Reduce the batch chunk size to ≤ ${Math.floor(PG_BIND_MAX_PARAMS / paramsPerRow)}.`,
+    );
+  }
+}
 
 /**
  * Postgres seeder for the telecom simulation (the 1K → 300M path).
@@ -48,15 +61,24 @@ export class PostgresSimSeeder {
   /** Upsert towers into `sim_cell_towers` (full) and `cell_towers` (module 02 subset). */
   async seedTowers(towers: readonly TelecomCellTower[]): Promise<void> {
     const pool = getPool();
-    const chunkSize = 2000;
+    const simCols = 53;
+    const subsetCols = 6;
+    const chunkSize = Math.min(
+      Math.floor(PG_BIND_MAX_PARAMS / simCols),
+      Math.floor(PG_BIND_MAX_PARAMS / subsetCols),
+    );
     for (let i = 0; i < towers.length; i += chunkSize) {
       const chunk = towers.slice(i, i + chunkSize);
-      await this.upsertSimTowers(pool, chunk);
-      await this.upsertCellTowersSubset(pool, chunk);
+      await this.upsertSimTowers(pool, chunk, simCols);
+      await this.upsertCellTowersSubset(pool, chunk, subsetCols);
     }
   }
 
-  private async upsertSimTowers(pool: ReturnType<typeof getPool>, towers: readonly TelecomCellTower[]): Promise<void> {
+  private async upsertSimTowers(
+    pool: ReturnType<typeof getPool>,
+    towers: readonly TelecomCellTower[],
+    paramsPerRow: number,
+  ): Promise<void> {
     const cols = [
       'site_id', 'cell_id', 'bts_id', 'service_provider', 'service_area', 'site_type', 'switch_make',
       'switch_model', 'state_id', 'tsp_name', 'msc_ip', 'ecgi', 'cgi', 'enb_id', 'gnb_id', 'sector_id',
@@ -85,10 +107,7 @@ export class PostgresSimSeeder {
         t.createdAt.toISOString(), JSON.stringify(t),
       );
     }
-    // The VALUES list is parameterized, so PostgreSQL infers every column as
-    // text. A `SELECT ... FROM (VALUES ...)` path does NOT get the target
-    // column types coerced (unlike a direct INSERT...VALUES), so non-text
-    // columns must be cast explicitly.
+    assertParamsWithinBindLimit(values, paramsPerRow, towers.length);
     const casts: Record<string, string> = {
       pci: '::integer',
       earfcn: '::integer',
@@ -119,7 +138,11 @@ export class PostgresSimSeeder {
     );
   }
 
-  private async upsertCellTowersSubset(pool: ReturnType<typeof getPool>, towers: readonly TelecomCellTower[]): Promise<void> {
+  private async upsertCellTowersSubset(
+    pool: ReturnType<typeof getPool>,
+    towers: readonly TelecomCellTower[],
+    paramsPerRow: number,
+  ): Promise<void> {
     const values: unknown[] = [];
     const groups: string[] = [];
     let p = 1;
@@ -127,6 +150,7 @@ export class PostgresSimSeeder {
       groups.push(`($${p++}, $${p++}, $${p++}, $${p++}, $${p++}, NULL, $${p++})`);
       values.push(t.siteId, t.cellId, t.latitude, t.longitude, t.coverageRadiusM, JSON.stringify(t));
     }
+    assertParamsWithinBindLimit(values, paramsPerRow, towers.length);
     await pool.query(
       `
       INSERT INTO cell_towers (id, cell_id, latitude, longitude, coverage_radius_m, coverage_geom, properties)
@@ -240,8 +264,14 @@ export class PostgresSimSeeder {
       }
       return;
     }
-    const { text, values } = buildUpsertSubscribersSql(this.cfg.SUBSCRIBER_TABLE, rows);
-    await pool.query(text, values);
+    const paramsPerRow = SUBSCRIBER_COLUMNS.length;
+    const MAX_ROWS = Math.floor(PG_BIND_MAX_PARAMS / paramsPerRow);
+    for (let i = 0; i < rows.length; i += MAX_ROWS) {
+      const slice = rows.slice(i, i + MAX_ROWS);
+      const { text, values } = buildUpsertSubscribersSql(this.cfg.SUBSCRIBER_TABLE, slice);
+      assertParamsWithinBindLimit(values, paramsPerRow, slice.length);
+      await pool.query(text, values);
+    }
   }
 
   private async countSubscribers(pool: ReturnType<typeof getPool>): Promise<number> {

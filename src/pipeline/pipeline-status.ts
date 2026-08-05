@@ -30,6 +30,10 @@ export interface PipelineStatusRecord {
   reason?: string;
   /** Towers identified for the alert's zone by module 02 (once resolved). */
   towerCount?: number;
+  /** Subscribers matched by modules 03/04 (pre-dedup, when the leg runs). */
+  matchedCount?: number;
+  /** Duplicates removed by module 05 (real removed count). */
+  duplicatesRemoved?: number;
   /** Intended recipients after dedup (module 05) — set when the leg runs. */
   expectedRecipients?: number;
   /** SMS actually submitted through module 13 (set when the leg completes). */
@@ -37,8 +41,19 @@ export interface PipelineStatusRecord {
   updatedAtMs: number;
 }
 
+/** Minimal tower record exposed to the frontend for matched-tower markers. */
+export interface MatchedTower {
+  id: string;
+  cellId: string;
+  latitude: number;
+  longitude: number;
+  coverageRadiusM?: number;
+}
+
 export class PipelineStatusStore {
   private readonly mem = new Map<string, PipelineStatusRecord>();
+  /** Matched towers, keyed by capIdentifier (only when module 02 ran). */
+  private readonly towers = new Map<string, MatchedTower[]>();
 
   update(rec: PipelineStatusRecord): void {
     this.mem.set(rec.capIdentifier, { ...rec, updatedAtMs: Date.now() });
@@ -46,6 +61,16 @@ export class PipelineStatusStore {
 
   get(capIdentifier: string): PipelineStatusRecord | undefined {
     return this.mem.get(capIdentifier);
+  }
+
+  /** Record the towers module 02 identified for an alert (real data). */
+  setTowers(capIdentifier: string, towers: readonly MatchedTower[]): void {
+    this.towers.set(capIdentifier, towers.map((t) => ({ ...t })));
+  }
+
+  /** Matched towers for an alert, or undefined if module 02 never ran. */
+  getTowers(capIdentifier: string): MatchedTower[] | undefined {
+    return this.towers.get(capIdentifier);
   }
 }
 

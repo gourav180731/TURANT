@@ -1,0 +1,27 @@
+{
+  "name": "turant-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Polygon-alert demo UI for TURANT (draw a polygon, dispatch a real CAP alert, watch the pipeline live).",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "leaflet": "^1.9.4",
+    "leaflet-draw": "^1.0.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/leaflet": "^1.9.16",
+    "@types/leaflet-draw": "^1.0.10",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.6.3",
+    "vite": "^6.3.5"
+  }
+}

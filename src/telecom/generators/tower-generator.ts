@@ -21,7 +21,6 @@ import type { TelecomTechnology } from '../entities/telecom-subscriber.js';
 import {
   BACKHAUL_TYPES,
   CONTROLLERS,
-  DELHI_NCR_AREAS,
   OPERATORS,
   SERVICE_AREA_BY_STATE,
   SITE_TYPES,
@@ -30,14 +29,19 @@ import {
   SWITCH_MODELS,
   VENDORS,
   type OperatorProfile,
-  type RegionArea,
 } from './geography.js';
+import { resolveHotspots, type ClusterHotspot } from './india-city-clusters.js';
 import { gaussian, makeRangeInt, pickWeighted, shuffle } from './prng.js';
 
 export interface TowerGenContext {
   count: number;
   techPct: Record<TelecomTechnology, number>;
   seed: number;
+  /**
+   * SIM_REGION — 'delhi-ncr' (default) or 'india' (18 city clusters).
+   * Determines which hotspots towers cluster around.
+   */
+  region?: string;
 }
 
 /** Radio-planning parameters per RAT. */
@@ -83,10 +87,10 @@ function clamp(v: number, lo: number, hi: number): number {
 }
 
 /** Pick a hotspot area weighted by locality density. */
-function pickHotspot(rand: () => number): RegionArea {
+function pickHotspot(rand: () => number, hotspots: readonly ClusterHotspot[]): ClusterHotspot {
   return pickWeighted(
     rand,
-    DELHI_NCR_AREAS.map((a) => ({ ...a, weight: a.weight ?? 1 })),
+    hotspots.map((h) => ({ ...h, weight: h.area.weight ?? 1 })),
   );
 }
 
@@ -109,6 +113,7 @@ export function planTechnologies(ctx: TowerGenContext, rand: () => number): Tele
 /** Generate `ctx.count` towers with unique ids/geometry within the region. */
 export function generateTowers(ctx: TowerGenContext, rand: () => number): TelecomCellTower[] {
   const techs = planTechnologies(ctx, rand);
+  const hotspots = resolveHotspots(ctx.region ?? 'delhi-ncr');
   const now = new Date();
 
   const azimuth = makeRangeInt(rand, 0, 359);
@@ -126,15 +131,18 @@ export function generateTowers(ctx: TowerGenContext, rand: () => number): Teleco
 
   for (let i = 0; i < ctx.count; i++) {
     const technology = techs[i]!;
-    const area = pickHotspot(rand);
+    const hotspot = pickHotspot(rand, hotspots);
+    const area = hotspot.area;
     const op = pickWeighted<OperatorProfile & { weight: number }>(rand, [
       ...OPERATORS.map((o) => ({ ...o, weight: o.weight ?? 1 })),
     ]);
     const profile = TECH_PROFILES[technology];
 
-    // Cluster: bell-shaped offset (~3 km σ) around the district hotspot.
-    const dLat = clamp(gaussian(rand) * 0.028, -0.06, 0.06);
-    const dLng = clamp(gaussian(rand) * 0.028, -0.06, 0.06);
+    // Cluster: bell-shaped offset around the city hotspot. Each city's σ/clamp
+    // is derived from its radiusKm in india-city-clusters.ts, so towers stay
+    // inside the city's geographic bounds while bunching near the core.
+    const dLat = clamp(gaussian(rand) * hotspot.sigmaDeg, -hotspot.clampDeg, hotspot.clampDeg);
+    const dLng = clamp(gaussian(rand) * hotspot.sigmaDeg, -hotspot.clampDeg, hotspot.clampDeg);
     const lat = area.latitude + dLat;
     const lng = area.longitude + dLng;
 
@@ -204,6 +212,7 @@ export function generateTowers(ctx: TowerGenContext, rand: () => number): Teleco
       city: area.city,
       zone: area.zone,
       pinCode: area.pinCode,
+      clusterKey: area.clusterKey,
       geometry: { type: 'Point', coordinates: [longitude, latitude] },
       createdAt: now,
     };

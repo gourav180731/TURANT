@@ -84,7 +84,7 @@ export class TelecomSimulator {
       NR5G: cfg.TECH_NR5G_PCT,
     };
     return generateTowers(
-      { count: cfg.DUMMY_TOWER_COUNT, techPct, seed: cfg.SIM_SEED },
+      { count: cfg.DUMMY_TOWER_COUNT, techPct, seed: cfg.SIM_SEED, region: cfg.SIM_REGION },
       mulberry32(cfg.SIM_SEED),
     );
   }
@@ -102,7 +102,7 @@ export class TelecomSimulator {
       NR5G: this.cfg.TECH_NR5G_PCT,
     };
     return generateTowers(
-      { count, techPct, seed: this.cfg.SIM_SEED },
+      { count, techPct, seed: this.cfg.SIM_SEED, region: this.cfg.SIM_REGION },
       mulberry32(this.cfg.SIM_SEED),
     );
   }

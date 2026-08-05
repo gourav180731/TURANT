@@ -100,6 +100,17 @@ export async function runAlertPipeline(input: RunPipelineInput): Promise<Pipelin
 
   const towerCount = towers.length;
   running('tower-resolution', { towerCount });
+  // Expose the real matched towers for the frontend's in-polygon markers.
+  pipelineStatusStore.setTowers(
+    capIdentifier,
+    towers.map((t) => ({
+      id: t.id,
+      cellId: t.cellId,
+      latitude: t.latitude,
+      longitude: t.longitude,
+      coverageRadiusM: t.coverageRadiusM,
+    })),
+  );
   log.info({ towerCount }, 'pipeline.towers_resolved');
 
   // ---- Modules 03/04: subscriber matching ----------------------------------
@@ -144,6 +155,14 @@ export async function runDisseminationLeg(input: DisseminationInput): Promise<Pi
 
   const matches = await matcher.matchSubscribers(towers, { alertId, capIdentifier });
   const matchedMsisdns = matches.flatMap((m) => m.msisdns);
+  pipelineStatusStore.update({
+    capIdentifier,
+    status: 'running',
+    stage: 'subscriber-matching',
+    towerCount: towers.length,
+    matchedCount: matchedMsisdns.length,
+    updatedAtMs: Date.now(),
+  });
 
   // Module 05 — dedup on the real matched list (marks t2 on the shared trace).
   const deduped = await deduplicate(matchedMsisdns, capIdentifier);
@@ -152,6 +171,8 @@ export async function runDisseminationLeg(input: DisseminationInput): Promise<Pi
     status: 'running',
     stage: 'dedup',
     towerCount: towers.length,
+    matchedCount: matchedMsisdns.length,
+    duplicatesRemoved: deduped.removedCount,
     expectedRecipients: deduped.deduplicated.length,
     updatedAtMs: Date.now(),
   });
@@ -172,6 +193,8 @@ export async function runDisseminationLeg(input: DisseminationInput): Promise<Pi
     status: 'completed',
     stage: 'done',
     towerCount: towers.length,
+    matchedCount: matchedMsisdns.length,
+    duplicatesRemoved: deduped.removedCount,
     expectedRecipients: deduped.deduplicated.length,
     submittedCount: result.aggregate.total,
     updatedAtMs: Date.now(),

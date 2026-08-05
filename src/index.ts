@@ -4,6 +4,7 @@ import express, { type Request, type Response } from 'express';
 import { loadConfig } from './config/env.js';
 import { createLatencyRoutes } from './http/latency-routes.js';
 import { createCapIngestionRoutes, CapIngestionService, CapDirectoryPoller } from './modules/01-cap-ingestion/index.js';
+import { createManualAlertRoutes } from './modules/01-cap-ingestion/manual-routes.js';
 import { createTowerDebugRoutes } from './modules/02-cell-site-identification/debug-routes.js';
 import { TowerResolver } from './modules/02-cell-site-identification/index.js';
 import { DlrListener } from './modules/11-dlr/dlr-listener.js';
@@ -14,8 +15,9 @@ import { hasRedis, pingRedis } from './persistence/redis-client.js';
 import { traceStore } from './tracing/trace-store.js';
 import { flushLogger, getLogger } from './utils/logger.js';
 import { runAlertPipeline } from './pipeline/alert-pipeline.js';
-import { createPipelineStatusRoutes } from './pipeline/routes.js';
+import { createPipelineStatusRoutes, createTowersRoute } from './pipeline/routes.js';
 import { pipelineStatusStore } from './pipeline/pipeline-status.js';
+import { createSimClustersRoute } from './telecom/sim-clusters-routes.js';
 import {
   createSubscriberRepository,
   createTelecomSimDebugRoutes,
@@ -72,11 +74,41 @@ app.use(
   }),
 );
 
+// Manual polygon alert (draw-a-polygon → one-click dispatch). Identical response
+// shape + identical pipeline trigger, so the frontend polls the same endpoints.
+app.use(
+  '/api/v1',
+  createManualAlertRoutes(ingestionService, {
+    onIngested: (result) => {
+      void runAlertPipeline({
+        alert: result.alert,
+        capIdentifier: result.capIdentifier,
+        alertId: result.alertId,
+      })
+        .then((status) => {
+          logger.info(
+            { capIdentifier: status.capIdentifier, status: status.status, stage: status.stage, reason: status.reason },
+            'manual.alert.pipeline',
+          );
+        })
+        .catch((err) => {
+          logger.error({ err, capIdentifier: result.capIdentifier }, 'manual.alert.pipeline_failed');
+        });
+    },
+  }),
+);
+
 // Cross-cutting latency dashboard (per-alert t0..t5 + delivery percentiles).
 app.use('/api/v1', createLatencyRoutes(traceStore));
 
 // Automatic pipeline progress / halt status per alert.
 app.use('/api/v1', createPipelineStatusRoutes(pipelineStatusStore));
+
+// Real matched towers for an alert (frontend in-polygon markers).
+app.use('/api/v1', createTowersRoute(pipelineStatusStore));
+
+// City-cluster hints for the map (how many depends on SIM_REGION).
+app.use('/api/v1', createSimClustersRoute(cfg.SIM_REGION));
 
 // DLR reporting (per-alert delivery report from real receipts).
 const dlrListener = new DlrListener();

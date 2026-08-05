@@ -86,6 +86,11 @@ export interface TelecomCellTower {
   city: string;
   zone?: string;
   pinCode: string;
+  /**
+   * City-cluster identity (e.g. 'mumbai', 'delhi-ncr'). Set for pan-India
+   * region generation so towers can be grouped for per-city bounds checks.
+   */
+  clusterKey?: string;
   /** GeoJSON Point [lng, lat] (PostGIS geometry, SRID 4326). */
   geometry: { type: 'Point'; coordinates: [number, number] };
   createdAt: Date;

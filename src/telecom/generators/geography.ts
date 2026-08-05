@@ -22,6 +22,16 @@ export interface RegionArea {
   longitude: number;
   /** Relative site density (urban cores host more BTS). */
   weight?: number;
+  /** Gaussian spatial σ in degrees around this hotspot (default 0.028). */
+  sigmaDeg?: number;
+  /** Clamp for the Gaussian offset in degrees (default 0.06). */
+  clampDeg?: number;
+  /**
+   * Identity of the city cluster this hotspot belongs to (e.g. 'mumbai',
+   * 'delhi-ncr'). Used to group towers for per-city bounds assertions and to
+   * tag generated towers so the frontend/UX can reason about regions.
+   */
+  clusterKey?: string;
 }
 
 export const DELHI_NCR_AREAS: readonly RegionArea[] = [
@@ -85,6 +95,18 @@ export const STATE_ID_BY_STATE: Readonly<Record<string, string>> = {
   DELHI: '7',
   HARYANA: '6',
   'UTTAR PRADESH': '9',
+  RAJASTHAN: '8',
+  MAHARASHTRA: '27',
+  GUJARAT: '24',
+  KARNATAKA: '29',
+  'TAMIL NADU': '33',
+  TELANGANA: '36',
+  KERALA: '32',
+  'WEST BENGAL': '19',
+  BIHAR: '10',
+  ODISHA: '21',
+  ASSAM: '18',
+  'MADHYA PRADESH': '23',
 };
 
 /** Telecom circle / service area label per state (C-DOT `service_area`). */
@@ -92,4 +114,16 @@ export const SERVICE_AREA_BY_STATE: Readonly<Record<string, string>> = {
   DELHI: 'DELHI',
   HARYANA: 'HARYANA',
   'UTTAR PRADESH': 'UP-WEST',
+  RAJASTHAN: 'RAJASTHAN',
+  MAHARASHTRA: 'MAHARASHTRA & GOA',
+  GUJARAT: 'GUJARAT',
+  KARNATAKA: 'KARNATAKA',
+  'TAMIL NADU': 'TAMILNADU & CHENNAI',
+  TELANGANA: 'AP & TELANGANA',
+  KERALA: 'KERALA',
+  'WEST BENGAL': 'WEST BENGAL & ANDAMAN',
+  BIHAR: 'BIHAR & JHARKHAND',
+  ODISHA: 'ORISSA',
+  ASSAM: 'NORTH-EAST & ASSAM',
+  'MADHYA PRADESH': 'MADHYA PRADESH',
 };

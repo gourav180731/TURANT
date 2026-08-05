@@ -2,11 +2,23 @@ import type { ParsedEnvConfig } from '../../config/env.js';
 import { getPool } from '../../persistence/pg-pool.js';
 import { getLogger } from '../../utils/logger.js';
 import type { TelecomCellTower } from '../entities/cell-tower.js';
-import { buildMasterInsertSql, type MasterInsertOptions } from './master-sql.js';
+import { buildMasterInsertSql, MASTER_COLUMNS, type MasterInsertOptions } from './master-sql.js';
 import { PostgresSimSeeder } from './postgres-seeder.js';
 import { buildTelecomMasterDdl } from './ddl.js';
 
 const log = getLogger();
+
+const PG_BIND_MAX_PARAMS = 32767;
+
+function assertParamsWithinBindLimit(values: readonly unknown[], paramsPerRow: number, rowCount: number): void {
+  if (values.length > PG_BIND_MAX_PARAMS) {
+    throw new Error(
+      `PostgreSQL Bind parameter limit exceeded: ${values.length} params` +
+        ` (${rowCount} rows × ${paramsPerRow} cols). Limit is ${PG_BIND_MAX_PARAMS}.` +
+        ` Reduce the batch chunk size to ≤ ${Math.floor(PG_BIND_MAX_PARAMS / paramsPerRow)}.`,
+    );
+  }
+}
 
 /**
  * Telecom Master Dataset seeder.
@@ -51,11 +63,13 @@ export class TelecomMasterSeeder extends PostgresSimSeeder {
     opts: MasterInsertOptions = {},
   ): Promise<number> {
     const pool = getPool();
-    const chunkSize = 2000;
+    const paramsPerRow = MASTER_COLUMNS.length;
+    const chunkSize = Math.floor(PG_BIND_MAX_PARAMS / paramsPerRow);
     let inserted = 0;
     for (let i = 0; i < towers.length; i += chunkSize) {
       const chunk = towers.slice(i, i + chunkSize);
       const { text, values } = buildMasterInsertSql(chunk, opts);
+      assertParamsWithinBindLimit(values, paramsPerRow, chunk.length);
       await pool.query(text, values);
       inserted += chunk.length;
     }
