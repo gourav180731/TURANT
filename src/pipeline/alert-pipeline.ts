@@ -124,7 +124,16 @@ export async function runAlertPipeline(input: RunPipelineInput): Promise<Pipelin
   }
 
   // ---- Modules 03/04 → 05 → 13 (dissemination leg, conditional) ------------
-  return runDisseminationLeg({ alert, capIdentifier, alertId, cfg, towers, zone });
+  try {
+    return await runDisseminationLeg({ alert, capIdentifier, alertId, cfg, towers, zone });
+  } catch (err) {
+    // A thrown dissipation (e.g. the subscriber query exceeded its time budget)
+    // must surface as a visible halted/failed state — never a run stuck at
+    // "running/subscriber-matching" forever.
+    const reason = err instanceof Error ? err.message : String(err);
+    log.error({ err, stage: 'subscriber-matching' }, 'pipeline.subscriber_match.failed');
+    return halted('subscriber-matching', reason, { towerCount });
+  }
 }
 
 /** Real, real-only dissemination: match → dedup → submit. Runs when a matcher exists. */

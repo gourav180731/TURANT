@@ -37,14 +37,24 @@ export class PostgresSubscriberDumpMatcher implements SubscriberMatcher {
     const pool = getPool();
     const client = await pool.connect();
     try {
+      // `SET LOCAL statement_timeout` only takes effect inside an explicit
+      // transaction block. Without BEGIN it would apply to the SET statement
+      // alone and never bound the actual lookup below — letting an oversized
+      // polygon scan the whole dump for minutes. Wrapping in a transaction
+      // makes the DB genuinely enforce the time budget.
+      await client.query('BEGIN');
       await client.query(`SET LOCAL statement_timeout = ${this.cfg.MATCH_TIME_BUDGET_MS}`);
       const { text, values } = buildSubscriberDumpZoneQuery(this.cfg, zone, this.cfg.SUBSCRIBER_DUMP_MATCH_LIMIT);
       const started = performance.now();
       const result = await client.query<{ msisdn: string }>(text, values);
+      await client.query('COMMIT');
       const elapsedMs = performance.now() - started;
       const msisdns = result.rows.map((r) => r.msisdn);
       logger.info({ matched: msisdns.length, elapsedMs, table: this.cfg.SUBSCRIBER_DUMP_TABLE }, 'subscriber.dump.query');
       return [{ towerId: 'zone', msisdns }];
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
     } finally {
       client.release();
     }

@@ -41,13 +41,20 @@ export class PostgisTowerSource implements TowerSource {
     const client = await pool.connect();
     try {
       // DB-side enforcement of the cell-site time budget (requirement #2).
+      // BEGIN + SET LOCAL so the timeout genuinely bounds the lookup below
+      // (SET LOCAL is a no-op outside an explicit transaction block).
+      await client.query('BEGIN');
       await client.query(`SET LOCAL statement_timeout = ${cfg.TOWER_MATCH_TIME_BUDGET_MS}`);
       const { text, values } = buildTowerZoneQuery(cfg, zone, limit);
       const started = performance.now();
       const result = await client.query<TowerRow>(text, values);
+      await client.query('COMMIT');
       const elapsedMs = performance.now() - started;
       logger.info({ rowCount: result.rowCount, elapsedMs }, 'cell.match.postgis.query');
       return result.rows.map((r) => this.toTower(r));
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
     } finally {
       client.release();
     }

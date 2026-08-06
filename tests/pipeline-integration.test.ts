@@ -31,6 +31,7 @@ const imdFixtureXml = readFileSync(imdFixturePath, 'utf8');
 process.env.DATABASE_URL = '';
 process.env.USE_DUMMY_SUBSCRIBER_DB = 'false';
 process.env.SUBSCRIBER_DB_MODE = 'memory';
+delete process.env.SUBSCRIBER_DUMP_TABLE;
 resetConfig();
 
 const fakeTowerSource: TowerSource = {
@@ -147,6 +148,48 @@ describe('pipeline integration — real HTTP entrypoint', () => {
     process.env.USE_DUMMY_SUBSCRIBER_DB = 'false';
     process.env.SUBSCRIBER_DB_MODE = 'memory';
     resetConfig();
+  });
+
+  it("marks the run halted (not stuck running) when the registered subscriber matcher throws", async () => {
+    // A throwing subscriber matcher models a real failure — e.g. the
+    // subscriber_dump query exceeding its time budget. The pipeline must
+    // surface a visible halted status (with the real reason) instead of leaving
+    // the run stuck at "running/subscriber-matching" forever.
+    process.env.DATABASE_URL = '';
+    process.env.TOWER_SOURCE_MODE = 'postgis';
+    process.env.USE_DUMMY_SUBSCRIBER_DB = 'true';
+    process.env.SUBSCRIBER_DB_MODE = 'memory';
+    process.env.SUBSCRIBER_DUMP_TABLE = 'subscriber_dump';
+    resetConfig();
+
+    const { registerSubscriberMatcher, resetSubscriberMatcher } = await import('../src/pipeline/subscriber-matcher.js');
+    const throwing: Parameters<typeof registerSubscriberMatcher>[0] = {
+      name: 'test-throwing',
+      async matchSubscribers(): Promise<never> {
+        throw new Error('subscriber dump query timed out (statement_timeout)');
+      },
+    };
+    registerSubscriberMatcher(throwing);
+
+    try {
+      const service = new CapIngestionService();
+      const ingested = await service.ingest(fixtureXml);
+      const result = await runAlertPipeline({
+        alert: ingested.alert,
+        capIdentifier: ingested.capIdentifier,
+        alertId: ingested.alertId,
+        resolver: new TowerResolver(),
+        source: fakeTowerSource,
+      });
+      expect(result.status).toBe('halted');
+      expect(result.haltedAt).toBe('subscriber-matching');
+      expect(result.reason).toMatch(/statement_timeout/);
+    } finally {
+      resetSubscriberMatcher();
+      delete process.env.SUBSCRIBER_DUMP_TABLE;
+      process.env.USE_DUMMY_SUBSCRIBER_DB = 'false';
+      resetConfig();
+    }
   });
 
   afterAll(async () => {
