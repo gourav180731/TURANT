@@ -15,9 +15,11 @@ import { hasRedis, pingRedis } from './persistence/redis-client.js';
 import { traceStore } from './tracing/trace-store.js';
 import { flushLogger, getLogger } from './utils/logger.js';
 import { runAlertPipeline } from './pipeline/alert-pipeline.js';
+import { registerSubscriberMatcher } from './pipeline/subscriber-matcher.js';
 import { createPipelineStatusRoutes, createTowersRoute } from './pipeline/routes.js';
 import { pipelineStatusStore } from './pipeline/pipeline-status.js';
 import { createSimClustersRoute } from './telecom/sim-clusters-routes.js';
+import { PostgresSubscriberDumpMatcher } from './telecom/matcher/subscriber-dump-matcher.js';
 import {
   createSubscriberRepository,
   createTelecomSimDebugRoutes,
@@ -141,6 +143,14 @@ if (cfg.USE_DUMMY_SUBSCRIBER_DB) {
  * binds a port or starts background work.
  */
 async function startServer(): Promise<void> {
+  // The real C-DOT subscriber-dump matcher (point-in-polygon against the
+  // dump's geometry column) works regardless of the telecom sim. Register it
+  // whenever SUBSCRIBER_DUMP_TABLE points at the real table.
+  if (cfg.SUBSCRIBER_DUMP_TABLE !== '' && cfg.DATABASE_URL) {
+    registerSubscriberMatcher(new PostgresSubscriberDumpMatcher(cfg));
+    logger.info({ table: cfg.SUBSCRIBER_DUMP_TABLE }, 'subscriber.dump.matcher.registered');
+  }
+
   if (cfg.USE_DUMMY_SUBSCRIBER_DB) {
     const sim = new TelecomSimulator(cfg);
     const boot = await sim.boot();

@@ -35,12 +35,14 @@ export function loadConfig(): ParsedEnvConfig {
         : parsed.data.TOWER_SOURCE_MODE,
     SMPP_INTERFACE_VERSION_NUM: parseInt(parsed.data.SMPP_INTERFACE_VERSION, 16),
     // Subscriber data is available when the telecom simulation is on, OR when
-    // the real prefetch layer has a database + is enabled. The pipeline ALSO
-    // requires a real SubscriberMatcher to be registered (see
+    // the real prefetch layer has a database + is enabled, OR when the real
+    // C-DOT subscriber dump is wired (SUBSCRIBER_DUMP_TABLE set). The pipeline
+    // ALSO requires a real SubscriberMatcher to be registered (see
     // src/pipeline/subscriber-matcher.ts) before it continues past 03/04.
     SUBSCRIBER_MATCHING_AVAILABLE:
       parsed.data.USE_DUMMY_SUBSCRIBER_DB ||
-      (parsed.data.SUBSCRIBER_PREFETCH_ENABLED && parsed.data.DATABASE_URL !== undefined),
+      (parsed.data.SUBSCRIBER_PREFETCH_ENABLED && parsed.data.DATABASE_URL !== undefined) ||
+      (parsed.data.SUBSCRIBER_DUMP_TABLE !== '' && parsed.data.DATABASE_URL !== undefined),
   };
   return cached;
 }

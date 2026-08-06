@@ -87,6 +87,16 @@ export const envSchema = z.object({
   SUBSCRIBER_COL_TOWER_ID: strFromEnv('tower_id'),
   SUBSCRIBER_LOOKUP_MODE: z.enum(LOOKUP_MODES).default('prefetched'),
 
+  // ---- Real C-DOT subscriber dump (requirement #4, real-data path) ---------
+  // When set to a real table name (e.g. subscriber_dump), module 03/04 matches
+  // subscribers by point-in-polygon against the dump's geometry column instead
+  // of joining the sim's `subscribers` table by cell_id. Empty = disabled.
+  SUBSCRIBER_DUMP_TABLE: strFromEnv(''),
+  SUBSCRIBER_DUMP_MSISDN_COL: strFromEnv('msisdn'),
+  SUBSCRIBER_DUMP_GEOM_COL: strFromEnv('geom'),
+  /** Safety cap on matched subscribers per polygon lookup. */
+  SUBSCRIBER_DUMP_MATCH_LIMIT: intFromEnvNonZero(100_000),
+
   // ---- Matching ----
   MATCH_TIME_BUDGET_MS: intFromEnvNonZero(60_000),
 

@@ -6,6 +6,7 @@ import type { TelecomTechnology } from '../entities/telecom-subscriber.js';
 import { generateSubscribers, subscriberBatchSeed } from '../generators/subscriber-generator.js';
 import { generateTowers } from '../generators/tower-generator.js';
 import { mulberry32 } from '../generators/prng.js';
+import { PostgresSubscriberDumpMatcher } from '../matcher/subscriber-dump-matcher.js';
 import { TelecomSimSubscriberMatcher } from '../matcher/telecom-subscriber-matcher.js';
 import {
   InMemorySubscriberRepository,
@@ -128,7 +129,13 @@ export class TelecomSimulator {
       log.info({ towers: towers.length, ...seeded }, 'telecom-sim.postgres.ready');
     }
 
-    registerSubscriberMatcher(new TelecomSimSubscriberMatcher(repo, cfg));
+    // Real-data path: when the C-DOT dump is wired AND the subscriber store is
+    // Postgres, match subscribers by point-in-polygon against the dump's geom
+    // column. Memory mode has no database, so it always uses the sim matcher.
+    const useDumpMatcher = cfg.SUBSCRIBER_DB_MODE === 'postgres' && cfg.SUBSCRIBER_DUMP_TABLE !== '';
+    registerSubscriberMatcher(
+      useDumpMatcher ? new PostgresSubscriberDumpMatcher(cfg) : new TelecomSimSubscriberMatcher(repo, cfg),
+    );
 
     return {
       repoName: repo.name,

@@ -1,4 +1,4 @@
-import type { CellTower } from '../types/tower.js';
+import type { CellTower, GeoZone } from '../types/tower.js';
 
 /**
  * Subscriber-matching contract for modules 03/04 — requirement #3/#4.
@@ -22,11 +22,22 @@ export interface SubscriberMatch {
   msisdns: string[];
 }
 
+export interface SubscriberMatchContext {
+  alertId: string;
+  capIdentifier: string;
+  /**
+   * The alert zone (the drawn polygon / circles). Tower-based matchers ignore
+   * it; the real C-DOT dump matcher uses it for direct point-in-polygon
+   * matching against the subscriber geometry column.
+   */
+  zone?: GeoZone;
+}
+
 export interface SubscriberMatcher {
   readonly name: string;
   matchSubscribers(
     towers: readonly CellTower[],
-    ctx: { alertId: string; capIdentifier: string },
+    ctx: SubscriberMatchContext,
   ): Promise<SubscriberMatch[]>;
 }
 

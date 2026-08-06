@@ -3,7 +3,7 @@ import { capZoneToGeoZone } from '../utils/geometry.js';
 import { getLogger } from '../utils/logger.js';
 import { TowerResolver } from '../modules/02-cell-site-identification/resolver.js';
 import type { TowerSource } from '../modules/02-cell-site-identification/tower-source.js';
-import type { CellTower } from '../types/tower.js';
+import type { CellTower, GeoZone } from '../types/tower.js';
 import type { CapAlert } from '../types/cap.js';
 import { deduplicate } from '../modules/05-dedup/dedupe.js';
 import { orchestrateAlertPipeline } from '../modules/13-parallel-processing/orchestrator.js';
@@ -124,7 +124,7 @@ export async function runAlertPipeline(input: RunPipelineInput): Promise<Pipelin
   }
 
   // ---- Modules 03/04 → 05 → 13 (dissemination leg, conditional) ------------
-  return runDisseminationLeg({ alert, capIdentifier, alertId, cfg, towers });
+  return runDisseminationLeg({ alert, capIdentifier, alertId, cfg, towers, zone });
 }
 
 /** Real, real-only dissemination: match → dedup → submit. Runs when a matcher exists. */
@@ -134,10 +134,12 @@ export interface DisseminationInput {
   alertId: string;
   cfg: ParsedEnvConfig;
   towers: CellTower[];
+  /** Alert zone (drawn polygon/circles) — used by the real C-DOT dump matcher. */
+  zone: GeoZone;
 }
 
 export async function runDisseminationLeg(input: DisseminationInput): Promise<PipelineStatusRecord> {
-  const { alert, capIdentifier, alertId, cfg, towers } = input;
+  const { alert, capIdentifier, alertId, cfg, towers, zone } = input;
   const log = logger.child({ alertId, capIdentifier });
   const matcher = getSubscriberMatcher();
   if (!matcher) {
@@ -153,7 +155,7 @@ export async function runDisseminationLeg(input: DisseminationInput): Promise<Pi
   });
   log.info({ matcher: matcher.name, towers: towers.length }, 'pipeline.subscriber_match.start');
 
-  const matches = await matcher.matchSubscribers(towers, { alertId, capIdentifier });
+  const matches = await matcher.matchSubscribers(towers, { alertId, capIdentifier, zone });
   const matchedMsisdns = matches.flatMap((m) => m.msisdns);
   pipelineStatusStore.update({
     capIdentifier,
