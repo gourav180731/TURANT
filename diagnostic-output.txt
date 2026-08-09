@@ -1,0 +1,371 @@
+Γùç injected env (99) from .env // tip: Γîÿ multiple files { path: ['.env.local', '.env'] }
+
+==========================================================================================
+  1. EXACT TABLE SCHEMAS
+==========================================================================================
+
+>>>>>> TABLE: subscribers <<<<<<
+
+--- Columns of subscribers ---
+[13.1 ms] rows: 41
+--------------------------------------------------------------------------------------------------------------------------
+ordinal_position | column_name        | data_type                | character_maximum_length | is_nullable | column_default
+--------------------------------------------------------------------------------------------------------------------------
+1                | imsi               | text                     | NULL                     | NO          | NULL          
+2                | id                 | text                     | NULL                     | YES         | NULL          
+3                | msisdn             | text                     | NULL                     | NO          | NULL          
+4                | imei               | text                     | NULL                     | YES         | NULL          
+5                | tmsi               | text                     | NULL                     | YES         | NULL          
+6                | cell_id            | text                     | NULL                     | NO          | NULL          
+7                | tower_id           | text                     | NULL                     | YES         | NULL          
+8                | previous_cell_id   | text                     | NULL                     | YES         | NULL          
+9                | lac                | text                     | NULL                     | YES         | NULL          
+10               | tac                | text                     | NULL                     | YES         | NULL          
+11               | rnc_id             | text                     | NULL                     | YES         | NULL          
+12               | enb_id             | text                     | NULL                     | YES         | NULL          
+13               | gnb_id             | text                     | NULL                     | YES         | NULL          
+14               | sector_id          | text                     | NULL                     | YES         | NULL          
+15               | technology         | text                     | NULL                     | NO          | NULL          
+16               | status             | text                     | NULL                     | NO          | NULL          
+17               | attach_time        | timestamp with time zone | NULL                     | YES         | NULL          
+18               | last_seen          | timestamp with time zone | NULL                     | YES         | NULL          
+19               | signal_rssi        | integer                  | NULL                     | YES         | NULL          
+20               | rsrp               | integer                  | NULL                     | YES         | NULL          
+21               | rsrq               | integer                  | NULL                     | YES         | NULL          
+22               | sinr               | integer                  | NULL                     | YES         | NULL          
+23               | roaming_status     | text                     | NULL                     | YES         | NULL          
+24               | emergency_capable  | boolean                  | NULL                     | YES         | NULL          
+25               | volte_enabled      | boolean                  | NULL                     | YES         | NULL          
+26               | vonr_enabled       | boolean                  | NULL                     | YES         | NULL          
+27               | device_vendor      | text                     | NULL                     | YES         | NULL          
+28               | device_model       | text                     | NULL                     | YES         | NULL          
+29               | sim_operator       | text                     | NULL                     | YES         | NULL          
+30               | home_plmn          | text                     | NULL                     | YES         | NULL          
+... (11 more rows)
+
+>>>>>> TABLE: subscriber_dump <<<<<<
+
+--- Columns of subscriber_dump ---
+[3.0 ms] rows: 15
+-----------------------------------------------------------------------------------------------------------------------------------------
+ordinal_position | column_name | data_type         | character_maximum_length | is_nullable | column_default                             
+-----------------------------------------------------------------------------------------------------------------------------------------
+1                | imsi        | character varying | 20                       | YES         | NULL                                       
+2                | msisdn      | character varying | 15                       | YES         | NULL                                       
+3                | lac         | character varying | 10                       | YES         | NULL                                       
+4                | cisac       | character varying | 10                       | YES         | NULL                                       
+5                | technology  | text              | NULL                     | YES         | NULL                                       
+6                | lact_date   | character varying | 10                       | YES         | NULL                                       
+7                | last_time   | character varying | 10                       | YES         | NULL                                       
+8                | city        | character varying | 50                       | YES         | NULL                                       
+9                | state       | character varying | 50                       | YES         | NULL                                       
+10               | latitude    | numeric           | NULL                     | YES         | NULL                                       
+11               | longitude   | numeric           | NULL                     | YES         | NULL                                       
+12               | operator    | text              | NULL                     | YES         | NULL                                       
+13               | district    | character varying | 50                       | YES         | NULL                                       
+14               | id          | bigint            | NULL                     | NO          | nextval('subscriber_dump_id_seq'::regclass)
+15               | geom        | USER-DEFINED      | NULL                     | YES         | NULL                                       
+
+>>>>>> TABLE: cell_towers <<<<<<
+
+--- Columns of cell_towers ---
+[2.7 ms] rows: 7
+-----------------------------------------------------------------------------------------------------------------
+ordinal_position | column_name       | data_type        | character_maximum_length | is_nullable | column_default
+-----------------------------------------------------------------------------------------------------------------
+1                | id                | text             | NULL                     | NO          | NULL          
+2                | cell_id           | text             | NULL                     | NO          | NULL          
+3                | latitude          | double precision | NULL                     | NO          | NULL          
+4                | longitude         | double precision | NULL                     | NO          | NULL          
+5                | coverage_radius_m | double precision | NULL                     | YES         | NULL          
+6                | coverage_geom     | USER-DEFINED     | NULL                     | YES         | NULL          
+7                | properties        | jsonb            | NULL                     | YES         | NULL          
+
+>>>>>> TABLE: target_cells <<<<<<
+
+--- Columns of target_cells ---
+[2.3 ms] rows: 1
+----------------------------------------------------------------------------------------------------
+ordinal_position | column_name | data_type | character_maximum_length | is_nullable | column_default
+----------------------------------------------------------------------------------------------------
+1                | cell_id     | text      | NULL                     | NO          | NULL          
+
+>>>>>> TABLE: telecom_master <<<<<<
+
+--- Columns of telecom_master ---
+[2.8 ms] rows: 22
+-------------------------------------------------------------------------------------------------------------------------
+ordinal_position | column_name       | data_type                | character_maximum_length | is_nullable | column_default
+-------------------------------------------------------------------------------------------------------------------------
+1                | id                | text                     | NULL                     | NO          | NULL          
+2                | service_provider  | text                     | NULL                     | YES         | NULL          
+3                | cell_id           | text                     | NULL                     | NO          | NULL          
+4                | latitude          | double precision         | NULL                     | NO          | NULL          
+5                | longitude         | double precision         | NULL                     | NO          | NULL          
+6                | service_area      | text                     | NULL                     | YES         | NULL          
+7                | state             | text                     | NULL                     | YES         | NULL          
+8                | district          | text                     | NULL                     | YES         | NULL          
+9                | city_town         | text                     | NULL                     | YES         | NULL          
+10               | pincode           | text                     | NULL                     | YES         | NULL          
+11               | bts_id            | text                     | NULL                     | YES         | NULL          
+12               | site_type         | text                     | NULL                     | YES         | NULL          
+13               | switch_make       | text                     | NULL                     | YES         | NULL          
+14               | switch_model      | text                     | NULL                     | YES         | NULL          
+15               | state_id          | text                     | NULL                     | YES         | NULL          
+16               | geom              | USER-DEFINED             | NULL                     | YES         | NULL          
+17               | rnc_id            | text                     | NULL                     | YES         | NULL          
+18               | tsp_name          | text                     | NULL                     | YES         | NULL          
+19               | msc_ip            | text                     | NULL                     | YES         | NULL          
+20               | technology        | text                     | NULL                     | NO          | NULL          
+21               | coverage_radius_m | double precision         | NULL                     | YES         | NULL          
+22               | created_at        | timestamp with time zone | NULL                     | YES         | NULL          
+
+>>>>>> TABLE: sim_cell_towers <<<<<<
+
+--- Columns of sim_cell_towers ---
+[3.2 ms] rows: 54
+---------------------------------------------------------------------------------------------------------------------------
+ordinal_position | column_name         | data_type                | character_maximum_length | is_nullable | column_default
+---------------------------------------------------------------------------------------------------------------------------
+1                | site_id             | text                     | NULL                     | NO          | NULL          
+2                | cell_id             | text                     | NULL                     | NO          | NULL          
+3                | bts_id              | text                     | NULL                     | YES         | NULL          
+4                | service_provider    | text                     | NULL                     | YES         | NULL          
+5                | service_area        | text                     | NULL                     | YES         | NULL          
+6                | site_type           | text                     | NULL                     | YES         | NULL          
+7                | switch_make         | text                     | NULL                     | YES         | NULL          
+8                | switch_model        | text                     | NULL                     | YES         | NULL          
+9                | state_id            | text                     | NULL                     | YES         | NULL          
+10               | tsp_name            | text                     | NULL                     | YES         | NULL          
+11               | msc_ip              | text                     | NULL                     | YES         | NULL          
+12               | ecgi                | text                     | NULL                     | YES         | NULL          
+13               | cgi                 | text                     | NULL                     | YES         | NULL          
+14               | enb_id              | text                     | NULL                     | YES         | NULL          
+15               | gnb_id              | text                     | NULL                     | YES         | NULL          
+16               | sector_id           | text                     | NULL                     | YES         | NULL          
+17               | pci                 | integer                  | NULL                     | YES         | NULL          
+18               | earfcn              | integer                  | NULL                     | YES         | NULL          
+19               | uarfcn              | integer                  | NULL                     | YES         | NULL          
+20               | arfcn               | integer                  | NULL                     | YES         | NULL          
+21               | tac                 | text                     | NULL                     | YES         | NULL          
+22               | lac                 | text                     | NULL                     | YES         | NULL          
+23               | mcc                 | text                     | NULL                     | YES         | NULL          
+24               | mnc                 | text                     | NULL                     | YES         | NULL          
+25               | plmn                | text                     | NULL                     | YES         | NULL          
+26               | operator            | text                     | NULL                     | YES         | NULL          
+27               | operator_short_name | text                     | NULL                     | YES         | NULL          
+28               | vendor              | text                     | NULL                     | YES         | NULL          
+29               | controller          | text                     | NULL                     | YES         | NULL          
+30               | rnc                 | text                     | NULL                     | YES         | NULL          
+... (24 more rows)
+
+==========================================================================================
+  2. PRIMARY KEYS, PARTITION KEYS, INDEXES
+==========================================================================================
+
+>>>>>> TABLE: subscribers <<<<<<
+
+--- Primary keys on subscribers ---
+[6.9 ms] rows: 1
+------------------------------------------------
+column_name | constraint_type | constraint_name 
+------------------------------------------------
+imsi        | PRIMARY KEY     | subscribers_pkey
+
+--- Partition strategy for subscribers ---
+[12.4 ms] rows: 1
+---------------------------------------------------------------
+partition_strategy | partition_expr | relkind  | relispartition
+---------------------------------------------------------------
+h                  | NULL           | p        | false         
+
+--- Partition list for subscribers ---
+[21.0 ms] rows: 16
+---------------------------------------------------------------------------------------------------------
+parent_schema | parent      | child_schema | child           | bound                                     
+---------------------------------------------------------------------------------------------------------
+public        | subscribers | public       | subscribers_p0  | FOR VALUES WITH (modulus 16, remainder 0) 
+public        | subscribers | public       | subscribers_p1  | FOR VALUES WITH (modulus 16, remainder 1) 
+public        | subscribers | public       | subscribers_p10 | FOR VALUES WITH (modulus 16, remainder 10)
+public        | subscribers | public       | subscribers_p11 | FOR VALUES WITH (modulus 16, remainder 11)
+public        | subscribers | public       | subscribers_p12 | FOR VALUES WITH (modulus 16, remainder 12)
+public        | subscribers | public       | subscribers_p13 | FOR VALUES WITH (modulus 16, remainder 13)
+public        | subscribers | public       | subscribers_p14 | FOR VALUES WITH (modulus 16, remainder 14)
+public        | subscribers | public       | subscribers_p15 | FOR VALUES WITH (modulus 16, remainder 15)
+public        | subscribers | public       | subscribers_p2  | FOR VALUES WITH (modulus 16, remainder 2) 
+public        | subscribers | public       | subscribers_p3  | FOR VALUES WITH (modulus 16, remainder 3) 
+public        | subscribers | public       | subscribers_p4  | FOR VALUES WITH (modulus 16, remainder 4) 
+public        | subscribers | public       | subscribers_p5  | FOR VALUES WITH (modulus 16, remainder 5) 
+public        | subscribers | public       | subscribers_p6  | FOR VALUES WITH (modulus 16, remainder 6) 
+public        | subscribers | public       | subscribers_p7  | FOR VALUES WITH (modulus 16, remainder 7) 
+public        | subscribers | public       | subscribers_p8  | FOR VALUES WITH (modulus 16, remainder 8) 
+public        | subscribers | public       | subscribers_p9  | FOR VALUES WITH (modulus 16, remainder 9) 
+
+--- All indexes on subscribers ---
+[28.6 ms] rows: 5
+--------------------------------------------------------------------------------------------------------------------------------------------
+index_name                | index_type | is_unique | is_primary | columns     | index_def                                                   
+--------------------------------------------------------------------------------------------------------------------------------------------
+subscribers_pkey          | btree      | true      | true       | {imsi}      | CREATE UNIQUE INDEX subscribers_pkey ON ONLY public.subsc...
+idx_subscribers_cell_id   | btree      | false     | false      | {cell_id}   | CREATE INDEX idx_subscribers_cell_id ON ONLY public.subsc...
+idx_subscribers_last_seen | btree      | false     | false      | {last_seen} | CREATE INDEX idx_subscribers_last_seen ON ONLY public.sub...
+idx_subscribers_msisdn    | btree      | false     | false      | {msisdn}    | CREATE INDEX idx_subscribers_msisdn ON ONLY public.subscr...
+idx_subscribers_status    | btree      | false     | false      | {status}    | CREATE INDEX idx_subscribers_status ON ONLY public.subscr...
+
+>>>>>> TABLE: subscriber_dump <<<<<<
+
+--- Primary keys on subscriber_dump ---
+[2.3 ms] rows: 1
+----------------------------------------------------
+column_name | constraint_type | constraint_name     
+----------------------------------------------------
+id          | PRIMARY KEY     | subscriber_dump_pkey
+
+--- Partition strategy for subscriber_dump ---
+[1.0 ms] rows: 1
+---------------------------------------------------------------
+partition_strategy | partition_expr | relkind  | relispartition
+---------------------------------------------------------------
+NULL               | NULL           | r        | false         
+
+--- All indexes on subscriber_dump ---
+[1.7 ms] rows: 2
+----------------------------------------------------------------------------------------------------------------------------------------
+index_name               | index_type | is_unique | is_primary | columns  | index_def                                                   
+----------------------------------------------------------------------------------------------------------------------------------------
+subscriber_dump_pkey     | btree      | true      | true       | {id}     | CREATE UNIQUE INDEX subscriber_dump_pkey ON public.subscr...
+idx_subscriber_dump_geom | gist       | false     | false      | {geom}   | CREATE INDEX idx_subscriber_dump_geom ON public.subscribe...
+
+>>>>>> TABLE: cell_towers <<<<<<
+
+--- Primary keys on cell_towers ---
+[2.5 ms] rows: 1
+------------------------------------------------
+column_name | constraint_type | constraint_name 
+------------------------------------------------
+id          | PRIMARY KEY     | cell_towers_pkey
+
+--- Partition strategy for cell_towers ---
+[0.6 ms] rows: 1
+---------------------------------------------------------------
+partition_strategy | partition_expr | relkind  | relispartition
+---------------------------------------------------------------
+NULL               | NULL           | r        | false         
+
+--- All indexes on cell_towers ---
+[2.8 ms] rows: 3
+-------------------------------------------------------------------------------------------------------------------------------------------
+index_name           | index_type | is_unique | is_primary | columns         | index_def                                                   
+-------------------------------------------------------------------------------------------------------------------------------------------
+cell_towers_pkey     | btree      | true      | true       | {id}            | CREATE UNIQUE INDEX cell_towers_pkey ON public.cell_tower...
+idx_cell_towers_geom | gist       | false     | false      | {coverage_geom} | CREATE INDEX idx_cell_towers_geom ON public.cell_towers U...
+idx_cell_towers_ll   | gist       | false     | false      | {NULL}          | CREATE INDEX idx_cell_towers_ll ON public.cell_towers USI...
+
+>>>>>> TABLE: target_cells <<<<<<
+
+--- Primary keys on target_cells ---
+[1.8 ms] rows: 1
+-------------------------------------------------
+column_name | constraint_type | constraint_name  
+-------------------------------------------------
+cell_id     | PRIMARY KEY     | target_cells_pkey
+
+--- Partition strategy for target_cells ---
+[0.5 ms] rows: 1
+---------------------------------------------------------------
+partition_strategy | partition_expr | relkind  | relispartition
+---------------------------------------------------------------
+NULL               | NULL           | r        | false         
+
+--- All indexes on target_cells ---
+[1.6 ms] rows: 1
+----------------------------------------------------------------------------------------------------------------------------------
+index_name        | index_type | is_unique | is_primary | columns   | index_def                                                   
+----------------------------------------------------------------------------------------------------------------------------------
+target_cells_pkey | btree      | true      | true       | {cell_id} | CREATE UNIQUE INDEX target_cells_pkey ON public.target_ce...
+
+>>>>>> TABLE: telecom_master <<<<<<
+
+--- Primary keys on telecom_master ---
+[1.7 ms] rows: 1
+---------------------------------------------------
+column_name | constraint_type | constraint_name    
+---------------------------------------------------
+id          | PRIMARY KEY     | telecom_master_pkey
+
+--- Partition strategy for telecom_master ---
+[0.6 ms] rows: 1
+---------------------------------------------------------------
+partition_strategy | partition_expr | relkind  | relispartition
+---------------------------------------------------------------
+NULL               | NULL           | r        | false         
+
+--- All indexes on telecom_master ---
+[2.4 ms] rows: 7
+-------------------------------------------------------------------------------------------------------------------------------------------
+index_name                 | index_type | is_unique | is_primary | columns   | index_def                                                   
+-------------------------------------------------------------------------------------------------------------------------------------------
+telecom_master_pkey        | btree      | true      | true       | {id}      | CREATE UNIQUE INDEX telecom_master_pkey ON public.telecom...
+idx_telecom_master_bts_id  | btree      | false     | false      | {bts_id}  | CREATE INDEX idx_telecom_master_bts_id ON public.telecom_...
+idx_telecom_master_cell_id | btree      | false     | false      | {cell_id} | CREATE INDEX idx_telecom_master_cell_id ON public.telecom...
+idx_telecom_master_geom    | gist       | false     | false      | {geom}    | CREATE INDEX idx_telecom_master_geom ON public.telecom_ma...
+idx_telecom_master_ll      | gist       | false     | false      | {NULL}    | CREATE INDEX idx_telecom_master_ll ON public.telecom_mast...
+telecom_master_bts_id_key  | btree      | true      | false      | {bts_id}  | CREATE UNIQUE INDEX telecom_master_bts_id_key ON public.t...
+telecom_master_cell_id_key | btree      | true      | false      | {cell_id} | CREATE UNIQUE INDEX telecom_master_cell_id_key ON public....
+
+==========================================================================================
+  5. LAC + CISAC / CELL_ID MAPPING VERIFICATION
+==========================================================================================
+
+subscriber_dump columns:
+  - imsi
+  - msisdn
+  - lac
+  - cisac
+  - technology
+  - lact_date
+  - last_time
+  - city
+  - state
+  - latitude
+  - longitude
+  - operator
+  - district
+  - id
+  - geom
+
+--- Sample subscribers: cell_id, lac, and related identity columns ---
+[117.6 ms] rows: 10
+-------------------------------------------------------------------------------------------------------------------------------------------
+imsi            | msisdn       | cell_id  | tower_id | lac      | tac      | rnc_id          | enb_id   | gnb_id   | sector_id | technology
+-------------------------------------------------------------------------------------------------------------------------------------------
+404680000000005 | 919000000006 | 9FB2     | 13794    | 1275     | NULL     | RNC-MTNL-6847   | NULL     | NULL     | S2        | UMTS      
+404680000000009 | 918000000010 | 9D80     | 13232    | 4425     | 6840     | RNC-JIO-5016    | 230      | NULL     | S2        | LTE       
+404680000000016 | 916000000017 | A0BC     | 14060    | 3550     | NULL     | RNC-JIO-1234    | NULL     | NULL     | S2        | GSM       
+404680000000019 | 917000000020 | 9C88     | 12984    | 6232     | NULL     | RNC-JIO-4142    | NULL     | NULL     | S1        | UMTS      
+404680000000023 | 919000000024 | A1B2     | 14306    | 6421     | NULL     | RNC-JIO-3164    | NULL     | NULL     | S3        | GSM       
+404680000000027 | 918000000028 | 9CA2     | 13010    | 0194     | 1040     | RNC-BSNL-1622   | NULL     | 226      | S3        | NR5G      
+404680000000032 | 916000000033 | 9D17     | 13127    | 5240     | NULL     | RNC-AIRTEL-8056 | NULL     | NULL     | S1        | GSM       
+404680000000076 | 916000000077 | A008     | 13880    | 1752     | NULL     | RNC-VI-6950     | NULL     | NULL     | S3        | GSM       
+404680000000081 | 919000000082 | A393     | 14787    | 3019     | 6614     | RNC-VI-7764     | 410      | NULL     | S1        | LTE       
+404680000000087 | 918000000088 | 9F66     | 13718    | 0073     | 8427     | RNC-AIRTEL-2965 | 918      | NULL     | S1        | LTE       
+
+--- Sample subscriber_dump rows (check for LAC/CISAC/CI fields) ---
+[193.8 ms] rows: 10
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+imsi            | msisdn       | lac      | cisac    | technology | lact_date | last_time | city     | state    | latitude  | longitude | operator | district | id       | geom                                              
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+404754045611277 | 919395094529 | 045F     | 2DEE     | 4G         | 09-13     | 04:40     | Leh      | Ladakh   | 34.170155 | 77.602812 | Airtel   | Leh      | 1288654  | 0101000020E6100000BA68C878946653401D2098A3C7154140
+404344697744092 | 918608254967 | 045A     | A868     | UMTS       | 09-13     | 10:24     | Patna    | Bihar    | 25.568933 | 85.144184 | Jio      | Patna    | 1352424  | 0101000020E6100000D026874F3A4955407C9DD497A5913940
+404664363023984 | 919903572421 | 0450     | 461F     | 4G         | 09-13     | 14:42     | Leh      | Ladakh   | 34.182007 | 77.569910 | VI       | Leh      | 1376852  | 0101000020E610000074EACA6779645340505260014C174140
+404685934134925 | 919273542223 | 045E     | CCD0     | 4G         | 09-13     | 14:07     | Aizawl   | Mizoram  | 23.729200 | 92.745892 | Jio      | Aizawl   | 1403282  | 0101000020E61000004696CCB1BC2F5740423EE8D9ACBA3740
+404556110104774 | 919379485605 | 045E     | 6869     | 4G         | 09-13     | 08:35     | Leh      | Ladakh   | 34.138398 | 77.616652 | Airtel   | Leh      | 1460809  | 0101000020E6100000D540F3397767534079EA9106B7114140
+404621526115926 | 918800485222 | 0456     | 1CBB     | 4G         | 09-13     | 05:30     | Leh      | Ladakh   | 34.152440 | 77.605334 | MTNL     | Leh      | 1470827  | 0101000020E61000000A4AD1CABD665340164D672783134140
+404344556922535 | 919984603811 | 0455     | EE99     | 4G         | 09-13     | 16:23     | Leh      | Ladakh   | 34.137998 | 77.575879 | Jio      | Leh      | 1506892  | 0101000020E610000001DD9733DB645340EB7420EBA9114140
+404621054533740 | 918691456222 | 0451     | BA59     | 4G         | 09-13     | 22:26     | Leh      | Ladakh   | 34.186830 | 77.556524 | Airtel   | Leh      | 1550471  | 0101000020E61000001ADCD6169E635340B2F4A10BEA174140
+404621827430081 | 919818340455 | 0453     | 0D95     | 5G         | 09-13     | 08:35     | Patna    | Bihar    | 25.587718 | 85.163406 | VI       | Patna    | 1582658  | 0101000020E6100000177E703E754A55404145D5AF74963940
+404752068626917 | 919857748075 | 0454     | DE10     | 4G         | 09-13     | 10:15     | Leh      | Ladakh   | 34.143296 | 77.573230 | BSNL     | Leh      | 1595351  | 0101000020E610000082C5E1CCAF645340E5D2F88557124140
+
+subscriber_dump has cell_id column? false
+
+--- subscriber_dump LAC/CISAC distinct count and sample values ---

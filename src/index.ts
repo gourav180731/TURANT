@@ -20,6 +20,9 @@ import { createPipelineStatusRoutes, createTowersRoute } from './pipeline/routes
 import { pipelineStatusStore } from './pipeline/pipeline-status.js';
 import { createSimClustersRoute } from './telecom/sim-clusters-routes.js';
 import { PostgresSubscriberDumpMatcher } from './telecom/matcher/subscriber-dump-matcher.js';
+import { PostgresSubscriberCellMatcher } from './telecom/matcher/subscriber-cell-matcher.js';
+import { CellSubscriberBridgeMatcher } from './telecom/matcher/cell-subscriber-bridge-matcher.js';
+import { createSubscriberBenchmarkRoutes } from './pipeline/benchmark-routes.js';
 import {
   createSubscriberRepository,
   createTelecomSimDebugRoutes,
@@ -143,12 +146,23 @@ if (cfg.USE_DUMMY_SUBSCRIBER_DB) {
  * binds a port or starts background work.
  */
 async function startServer(): Promise<void> {
-  // The real C-DOT subscriber-dump matcher (point-in-polygon against the
-  // dump's geometry column) works regardless of the telecom sim. Register it
-  // whenever SUBSCRIBER_DUMP_TABLE points at the real table.
+  // The real C-DOT subscriber-dump matcher. Three modes:
+  //   bridge (default) : full-relational cell → (lac,cisac) → indexed dump join
+  //                      (Phase 4/5 — the production architecture).
+  //   cell-indexed     : legacy `cell_id = ANY($1)` (only valid if the dump
+  //                      actually carries a cell_id column).
+  //   polygon          : point-in-polygon against the dump geom column.
   if (cfg.SUBSCRIBER_DUMP_TABLE !== '' && cfg.DATABASE_URL) {
-    registerSubscriberMatcher(new PostgresSubscriberDumpMatcher(cfg));
-    logger.info({ table: cfg.SUBSCRIBER_DUMP_TABLE }, 'subscriber.dump.matcher.registered');
+    const mode = cfg.SUBSCRIBER_DUMP_LOOKUP_MODE;
+    registerSubscriberMatcher(
+      mode === 'polygon'
+        ? new PostgresSubscriberDumpMatcher(cfg)
+        : mode === 'cell-indexed'
+          ? new PostgresSubscriberCellMatcher(cfg)
+          : new CellSubscriberBridgeMatcher(cfg),
+    );
+    logger.info({ table: cfg.SUBSCRIBER_DUMP_TABLE, mode }, 'subscriber.dump.matcher.registered');
+    app.use('/api/v1', createSubscriberBenchmarkRoutes(new CellSubscriberBridgeMatcher(cfg)));
   }
 
   if (cfg.USE_DUMMY_SUBSCRIBER_DB) {

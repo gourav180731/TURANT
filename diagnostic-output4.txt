@@ -1,0 +1,341 @@
+Γùç injected env (99) from .env // tip: Γîü auth for agents [www.vestauth.com]
+
+==========================================================================================
+  TARGET CELLS ANALYSIS
+==========================================================================================
+
+--- ALL 100 target_cells ---
+[7.3 ms] rows: 100
+-------------------
+cell_id  | len     
+-------------------
+10000    | 5       
+10001    | 5       
+10002    | 5       
+10003    | 5       
+10004    | 5       
+10005    | 5       
+10006    | 5       
+10007    | 5       
+10008    | 5       
+10009    | 5       
+1000A    | 5       
+1000B    | 5       
+1000C    | 5       
+1000D    | 5       
+1000E    | 5       
+1000F    | 5       
+10010    | 5       
+10011    | 5       
+10012    | 5       
+10013    | 5       
+10014    | 5       
+10015    | 5       
+10016    | 5       
+10017    | 5       
+10018    | 5       
+10019    | 5       
+1001A    | 5       
+1001B    | 5       
+1001C    | 5       
+1001D    | 5       
+... (70 more rows)
+
+--- target_cells numeric range analysis ---
+[8.2 ms] rows: 1
+---------------------------------------------
+total    | min_text | max_text | pattern     
+---------------------------------------------
+100      | 10000    | 10063    | ALL_HEX_TEXT
+
+==========================================================================================
+  SUBSCRIBERS SIM TABLE
+==========================================================================================
+
+--- COUNT subscribers ---
+[257.1 ms] rows: 1
+--------
+count   
+--------
+2000    
+
+--- ALL DISTINCT subscribers.cell_id values ---
+[13.8 ms] rows: 1251
+-------------------
+cell_id  | lac     
+-------------------
+9C83     | 0242    
+9C85     | 5207    
+9C86     | 3901    
+9C87     | 5052    
+9C88     | 6232    
+9C89     | 4632    
+9C8C     | 4398    
+9C8E     | 3795    
+9C90     | 4385    
+9C92     | 0561    
+9C94     | 0268    
+9C95     | 2123    
+9C96     | 2064    
+9C97     | 0560    
+9C98     | 6186    
+9C99     | 6497    
+9C9A     | 6681    
+9C9B     | 5455    
+9C9D     | 5590    
+9C9E     | 2302    
+9C9F     | 4971    
+9CA2     | 0194    
+9CA4     | 5361    
+9CA6     | 4313    
+9CA7     | 6097    
+9CA8     | 6611    
+9CA9     | 6072    
+9CAA     | 3340    
+9CAB     | 3275    
+9CAC     | 2630    
+... (1221 more rows)
+
+--- target_cells direct match with subscribers.cell_id ---
+[7.9 ms] rows: 1
+--------------------------------------------------------------------------------------
+total_target | matched  | matched_ids                                                 
+--------------------------------------------------------------------------------------
+100          | 100      | 10000,10001,10002,10003,10004,10005,10006,10007,10008,100...
+
+==========================================================================================
+  SIM_CELL_TOWERS ANALYSIS
+==========================================================================================
+
+--- sim_cell_towers cell_id format sample 30 ---
+[12.7 ms] rows: 30
+-------------------------------------------------------------------------------------------------------------------------------
+site_id  | cell_id  | lac      | bts_id        | cgi       | ecgi          | technology | operator                             
+-------------------------------------------------------------------------------------------------------------------------------
+12977    | 9C81     | 4030     | JIO-100000    | NULL      | 405303609C81  | NR5G       | Reliance Jio Infocomm Ltd.           
+12978    | 9C82     | 6330     | AIRTEL-100001 | 404869C82 | NULL          | UMTS       | Bharti Airtel Ltd.                   
+12979    | 9C83     | 0242     | BSNL-100002   | 404459C83 | NULL          | UMTS       | Bharat Sanchar Nigam Ltd.            
+12980    | 9C84     | 5132     | MTNL-100003   | NULL      | 404684279C84  | LTE        | Mahanagar Telephone Nigam Ltd. (MTNL)
+12981    | 9C85     | 5207     | BSNL-100004   | NULL      | 404457769C85  | NR5G       | Bharat Sanchar Nigam Ltd.            
+12982    | 9C86     | 3901     | AIRTEL-100005 | NULL      | 404869789C86  | LTE        | Bharti Airtel Ltd.                   
+12983    | 9C87     | 5052     | MTNL-100006   | NULL      | 404687569C87  | LTE        | Mahanagar Telephone Nigam Ltd. (MTNL)
+12984    | 9C88     | 6232     | JIO-100007    | 405309C88 | NULL          | UMTS       | Reliance Jio Infocomm Ltd.           
+12985    | 9C89     | 4632     | AIRTEL-100008 | 404869C89 | NULL          | GSM        | Bharti Airtel Ltd.                   
+12986    | 9C8A     | 1054     | VI-100009     | 404139C8A | NULL          | GSM        | Vodafone Idea Ltd.                   
+12987    | 9C8B     | 2582     | VI-100010     | NULL      | 404137729C8B  | LTE        | Vodafone Idea Ltd.                   
+12988    | 9C8C     | 4398     | VI-100011     | 404139C8C | NULL          | UMTS       | Vodafone Idea Ltd.                   
+12989    | 9C8D     | 0826     | JIO-100012    | NULL      | 405303279C8D  | LTE        | Reliance Jio Infocomm Ltd.           
+12990    | 9C8E     | 3795     | BSNL-100013   | 404459C8E | NULL          | GSM        | Bharat Sanchar Nigam Ltd.            
+12991    | 9C8F     | 1998     | MTNL-100014   | NULL      | 404687179C8F  | NR5G       | Mahanagar Telephone Nigam Ltd. (MTNL)
+12992    | 9C90     | 4385     | BSNL-100015   | 404459C90 | NULL          | UMTS       | Bharat Sanchar Nigam Ltd.            
+12993    | 9C91     | 5958     | BSNL-100016   | NULL      | 404455479C91  | NR5G       | Bharat Sanchar Nigam Ltd.            
+12994    | 9C92     | 0561     | VI-100017     | NULL      | 4041310509C92 | LTE        | Vodafone Idea Ltd.                   
+12995    | 9C93     | 3409     | VI-100018     | NULL      | 404131379C93  | LTE        | Vodafone Idea Ltd.                   
+12996    | 9C94     | 0268     | BSNL-100019   | 404459C94 | NULL          | UMTS       | Bharat Sanchar Nigam Ltd.            
+12997    | 9C95     | 2123     | JIO-100020    | 405309C95 | NULL          | GSM        | Reliance Jio Infocomm Ltd.           
+12998    | 9C96     | 2064     | BSNL-100021   | NULL      | 404455119C96  | LTE        | Bharat Sanchar Nigam Ltd.            
+12999    | 9C97     | 0560     | AIRTEL-100022 | NULL      | 404868129C97  | LTE        | Bharti Airtel Ltd.                   
+13000    | 9C98     | 6186     | AIRTEL-100023 | 404869C98 | NULL          | GSM        | Bharti Airtel Ltd.                   
+13001    | 9C99     | 6497     | JIO-100024    | 405309C99 | NULL          | UMTS       | Reliance Jio Infocomm Ltd.           
+13002    | 9C9A     | 6681     | AIRTEL-100025 | 404869C9A | NULL          | UMTS       | Bharti Airtel Ltd.                   
+13003    | 9C9B     | 5455     | AIRTEL-100026 | NULL      | 404868389C9B  | LTE        | Bharti Airtel Ltd.                   
+13004    | 9C9C     | 5499     | BSNL-100027   | 404459C9C | NULL          | GSM        | Bharat Sanchar Nigam Ltd.            
+13005    | 9C9D     | 5590     | VI-100028     | NULL      | 404138899C9D  | NR5G       | Vodafone Idea Ltd.                   
+13006    | 9C9E     | 2302     | JIO-100029    | 405309C9E | NULL          | GSM        | Reliance Jio Infocomm Ltd.           
+
+--- sim_cell_towers: distinct LAC values ---
+[354.4 ms] rows: 30
+--------
+lac     
+--------
+0001    
+0002    
+0003    
+0004    
+0005    
+0006    
+0007    
+0008    
+0009    
+0010    
+0011    
+0012    
+0013    
+0014    
+0015    
+0016    
+0017    
+0018    
+0019    
+0020    
+0021    
+0022    
+0023    
+0024    
+0025    
+0026    
+0027    
+0028    
+0029    
+0030    
+
+--- sim_cell_towers: distinct cell_id vs target_cells overlap ---
+[1605.5 ms] rows: 1
+-----------------------------------------------
+sim_tower_cell_ids_total | overlap_target_cells
+-----------------------------------------------
+50000                    | 100                 
+
+--- target_cells vs sim_cell_towers.cell_id JOIN ---
+[29.9 ms] rows: 1
+-----------------------------------------
+total_target | direct_match_in_sim_towers
+-----------------------------------------
+100          | 100                       
+
+--- target_cells vs sim_cell_towers.bts_id JOIN ---
+[3.1 ms] rows: 1
+--------------------------------------
+total_target | bts_match_in_sim_towers
+--------------------------------------
+100          | 0                      
+
+==========================================================================================
+  CELL_TOWERS TABLE
+==========================================================================================
+
+--- cell_towers sample 20 ---
+[13.8 ms] rows: 20
+---------------------------------------------------------------
+id       | cell_id  | latitude  | longitude | coverage_radius_m
+---------------------------------------------------------------
+12977    | 9C81     | 28.664213 | 77.454729 | 905              
+12978    | 9C82     | 28.704029 | 77.13578  | 1145             
+12979    | 9C83     | 28.564754 | 77.424524 | 1750             
+12980    | 9C84     | 28.733981 | 77.198903 | 544              
+12981    | 9C85     | 28.685907 | 77.11583  | 271              
+12982    | 9C86     | 28.627262 | 77.189874 | 706              
+12983    | 9C87     | 28.593262 | 77.18236  | 1246             
+12984    | 9C88     | 28.455986 | 77.038078 | 1809             
+12985    | 9C89     | 28.536998 | 77.41145  | 2936             
+12986    | 9C8A     | 28.574507 | 77.123936 | 3181             
+12987    | 9C8B     | 28.63     | 77.175819 | 690              
+12988    | 9C8C     | 28.556489 | 77.055357 | 1789             
+12989    | 9C8D     | 28.654338 | 77.201435 | 1025             
+12990    | 9C8E     | 28.71537  | 77.068876 | 3446             
+12991    | 9C8F     | 28.649171 | 77.130591 | 732              
+12992    | 9C90     | 28.45016  | 77.296357 | 966              
+12993    | 9C91     | 28.720012 | 77.133474 | 917              
+12994    | 9C92     | 28.649607 | 77.335476 | 1123             
+12995    | 9C93     | 28.487292 | 77.522673 | 1228             
+12996    | 9C94     | 28.576988 | 77.346899 | 2052             
+
+--- target_cells vs cell_towers.cell_id JOIN ---
+[820.2 ms] rows: 1
+------------------------------------------
+total_target | direct_match_in_cell_towers
+------------------------------------------
+100          | 100                        
+
+--- target_cells vs cell_towers.id JOIN ---
+[2.1 ms] rows: 1
+-----------------------------------
+total_target | match_cell_towers_id
+-----------------------------------
+100          | 0                   
+
+==========================================================================================
+  TELECOM_MASTER TABLE
+==========================================================================================
+
+--- telecom_master contents (all rows) ---
+[104.4 ms] rows: 5
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+id       | service_provider                             | cell_id           | latitude  | longitude | service_area | state    | district  | city_town       | pincode  | bts_id   | site_type | switch_make | switch_model | state_id | geom                                               | rnc_id         | tsp_name | msc_ip   | technology | coverage_radius_m | created_at                                             
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+13001    | Mahanagar Telephone Nigam Ltd. (MTNL), DELHI | 404-68-117-70001  | 28.6139   | 77.209    | DELHI        | Delhi    | NEW DELHI | DELHI-CENTRAL   | 110001   | 70001    | GSM       | HUAWEI      | MSOFT3000    | 1296     | 0101000020E61000004C378941604D5340B003E78C289D3C40 | default_rnc_id | MTNL     | RNC_IP   | GSM        | 500               | Tue Aug 04 2026 16:47:22 GMT+0530 (India Standard Time)
+13002    | Mahanagar Telephone Nigam Ltd. (MTNL), DELHI | 404-68-117-70002  | 28.616878 | 77.215864 | DELHI        | Delhi    | NEW DELHI | DELHI-CENTRAL   | 110001   | 70002    | UMTS      | HUAWEI      | MSOFT3000    | 1296     | 0101000020E61000008F183DB7D04D5340349F73B7EB9D3C40 | default_rnc_id | MTNL     | RNC_IP   | UMTS       | 600               | Tue Aug 04 2026 16:47:22 GMT+0530 (India Standard Time)
+13003    | Bharti Airtel Ltd.                           | 404-45-210-70003  | 28.6205   | 77.225    | DELHI        | Delhi    | NEW DELHI | CONNAUGHT PLACE | 110001   | 70003    | LTE       | NOKIA       | FlexiNS      | 1296     | 0101000020E610000066666666664E5340022B8716D99E3C40 | airtel_rnc_01  | AIRTEL   | 10.1.1.1 | LTE        | 1200              | Tue Aug 04 2026 16:47:22 GMT+0530 (India Standard Time)
+13004    | Reliance Jio Infocomm Ltd.                   | 405-857-310-70004 | 28.6245   | 77.23     | DELHI        | Delhi    | NEW DELHI | CONNAUGHT PLACE | 110001   | 70004    | NR5G      | ERICSSON    | RAN Compute  | 1296     | 0101000020E61000001F85EB51B84E53401D5A643BDF9F3C40 | jio_rnc_01     | JIO      | 10.2.1.1 | NR5G       | 2000              | Tue Aug 04 2026 16:47:22 GMT+0530 (India Standard Time)
+13005    | Vodafone Idea Ltd.                           | 404-86-410-70005  | 28.628    | 77.218    | DELHI        | Delhi    | NEW DELHI | KAROL BAGH      | 110005   | 70005    | LTE       | HUAWEI      | MSOFT3000    | 1296     | 0101000020E6100000CBA145B6F34D534054E3A59BC4A03C40 | vi_rnc_01      | VI       | 10.3.1.1 | LTE        | 1000              | Tue Aug 04 2026 16:47:22 GMT+0530 (India Standard Time)
+
+==========================================================================================
+  SUBSCRIBER_DUMP ΓÇö LIMIT SAMPLE ONLY (no full scans)
+==========================================================================================
+
+--- dump first 20 rows ONLY (LIMIT scan, no sorting) ---
+[35.7 ms] rows: 20
+--------------------------------------------------------------------------------------------------------------------------------------
+imsi            | msisdn       | lac      | cisac    | technology | city       | state             | operator | district    | id      
+--------------------------------------------------------------------------------------------------------------------------------------
+404556026727562 | 918760683550 | 0455     | 603C     | 4G         | Vijayawada | Andhra Pradesh    | Airtel   | NTR         | 987024  
+404754414281949 | 919326220635 | 0456     | 286F     | 5G         | Srinagar   | Jammu and Kashmir | Airtel   | Srinagar    | 987025  
+404752920140125 | 919818882906 | 0460     | D6A0     | 4G         | Bhopal     | Madhya Pradesh    | Airtel   | Bhopal      | 987026  
+404742238390765 | 919931992747 | 045B     | 3769     | 4G         | Vijayawada | Andhra Pradesh    | Airtel   | NTR         | 987027  
+404754555455235 | 918707109904 | 0460     | E469     | UMTS       | Raipur     | Chhattisgarh      | BSNL     | Raipur      | 987028  
+404754909421689 | 919292401635 | 0458     | 80A4     | 5G         | Patna      | Bihar             | Airtel   | Patna       | 987029  
+404685820058279 | 919919841579 | 045F     | 94E5     | 5G         | Lucknow    | Uttar Pradesh     | Jio      | Lucknow     | 987030  
+404556763919305 | 919464719769 | 0458     | 3E2D     | 4G         | Kavaratti  | Lakshadweep       | Airtel   | Lakshadweep | 987031  
+404344839227425 | 919454200148 | 0457     | 42C9     | 4G         | Gurugram   | Haryana           | Jio      | Gurugram    | 987032  
+404754586692392 | 919998616688 | 045C     | 41D8     | 4G         | Patna      | Bihar             | Airtel   | Patna       | 987033  
+404685980919929 | 918799007847 | 045F     | A8D9     | 4G         | Jammu      | Jammu and Kashmir | Airtel   | Jammu       | 987034  
+404742701718037 | 919236735156 | 0456     | 203C     | 5G         | Imphal     | Manipur           | Jio      | Imphal West | 987035  
+404742118208868 | 919362319250 | 0457     | 8FC6     | 5G         | Jaipur     | Rajasthan         | Jio      | Jaipur      | 987036  
+404685358080162 | 918850084973 | 0459     | A14F     | 5G         | Jammu      | Jammu and Kashmir | Airtel   | Jammu       | 987037  
+404752285414506 | 918733725133 | 045B     | 0884     | 5G         | Puducherry | Puducherry        | VI       | Puducherry  | 987038  
+404685412343583 | 919980780613 | 045D     | 5161     | 4G         | Jammu      | Jammu and Kashmir | Airtel   | Jammu       | 987039  
+404685124472514 | 919961954438 | 045A     | FED9     | 5G         | Panaji     | Goa               | Jio      | North Goa   | 987040  
+404664309147836 | 919929224976 | 0460     | CDC3     | UMTS       | Jammu      | Jammu and Kashmir | BSNL     | Jammu       | 987041  
+404752487661532 | 918789436463 | 0453     | 01D4     | 4G         | Chandigarh | Chandigarh        | Jio      | Chandigarh  | 987042  
+404742527704415 | 919228149355 | 0455     | B7E8     | 4G         | Lucknow    | Uttar Pradesh     | Airtel   | Lucknow     | 987043  
+
+--- dump sample 20: LAC CISAC values first pass ---
+[14.8 ms] rows: 20
+----------------------------------------------------------
+lac      | cisac    | pair_dash | pair_plain | pair_upcase
+----------------------------------------------------------
+0458     | D115     | 0458-D115 | 0458D115   | 0458-D115  
+0451     | C396     | 0451-C396 | 0451C396   | 0451-C396  
+0458     | 7524     | 0458-7524 | 04587524   | 0458-7524  
+045C     | 6DEC     | 045C-6DEC | 045C6DEC   | 045C-6DEC  
+0456     | 003A     | 0456-003A | 0456003A   | 0456-003A  
+045E     | F852     | 045E-F852 | 045EF852   | 045E-F852  
+0453     | D8A5     | 0453-D8A5 | 0453D8A5   | 0453-D8A5  
+045F     | D623     | 045F-D623 | 045FD623   | 045F-D623  
+045E     | 6C84     | 045E-6C84 | 045E6C84   | 045E-6C84  
+0456     | 143E     | 0456-143E | 0456143E   | 0456-143E  
+045D     | 2019     | 045D-2019 | 045D2019   | 045D-2019  
+045E     | 95B6     | 045E-95B6 | 045E95B6   | 045E-95B6  
+045D     | 180E     | 045D-180E | 045D180E   | 045D-180E  
+045B     | 5D64     | 045B-5D64 | 045B5D64   | 045B-5D64  
+0457     | C760     | 0457-C760 | 0457C760   | 0457-C760  
+0459     | 3C29     | 0459-3C29 | 04593C29   | 0459-3C29  
+0452     | A184     | 0452-A184 | 0452A184   | 0452-A184  
+045F     | 261C     | 045F-261C | 045F261C   | 045F-261C  
+0451     | 87BF     | 0451-87BF | 045187BF   | 0451-87BF  
+045E     | E99B     | 045E-E99B | 045EE99B   | 045E-E99B  
+
+--- Dump first 5000 rows ΓÇö test 4 mapping strategies vs target_cells (NO full scan!) ---
+Diagnostic failed: error: syntax error at or near "EXISTS"
+    at C:\Users\91958\OneDrive\Desktop\TURANT\node_modules\pg\lib\client.js:652:17
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async runQuery (C:\Users\91958\OneDrive\Desktop\TURANT\scripts\activity3-diagnostic4.ts:12:15)
+    at async main (C:\Users\91958\OneDrive\Desktop\TURANT\scripts\activity3-diagnostic4.ts:158:3) {
+  length: 96,
+  severity: 'ERROR',
+  code: '42601',
+  detail: undefined,
+  hint: undefined,
+  position: '119',
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'scan.l',
+  line: '1240',
+  routine: 'scanner_yyerror'
+}

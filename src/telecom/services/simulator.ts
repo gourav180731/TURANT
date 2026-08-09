@@ -7,6 +7,8 @@ import { generateSubscribers, subscriberBatchSeed } from '../generators/subscrib
 import { generateTowers } from '../generators/tower-generator.js';
 import { mulberry32 } from '../generators/prng.js';
 import { PostgresSubscriberDumpMatcher } from '../matcher/subscriber-dump-matcher.js';
+import { PostgresSubscriberCellMatcher } from '../matcher/subscriber-cell-matcher.js';
+import { CellSubscriberBridgeMatcher } from '../matcher/cell-subscriber-bridge-matcher.js';
 import { TelecomSimSubscriberMatcher } from '../matcher/telecom-subscriber-matcher.js';
 import {
   InMemorySubscriberRepository,
@@ -130,11 +132,22 @@ export class TelecomSimulator {
     }
 
     // Real-data path: when the C-DOT dump is wired AND the subscriber store is
-    // Postgres, match subscribers by point-in-polygon against the dump's geom
-    // column. Memory mode has no database, so it always uses the sim matcher.
+    // Postgres, match subscribers against the dump. Default is the full-
+    // relational bridge (polygon → cells → (lac,cisac) → indexed dump JOIN).
+    // `bridge`      : cell_subscriber_mapping → (lac,cisac) composite index JOIN.
+    // `cell-indexed`: legacy `cell_id = ANY($1)` (dump must carry cell_id).
+    // `polygon`     : point-in-polygon against the dump geom column.
+    // Memory mode has no database, so it always uses the sim matcher.
     const useDumpMatcher = cfg.SUBSCRIBER_DB_MODE === 'postgres' && cfg.SUBSCRIBER_DUMP_TABLE !== '';
+    const dumpMode = cfg.SUBSCRIBER_DUMP_LOOKUP_MODE;
     registerSubscriberMatcher(
-      useDumpMatcher ? new PostgresSubscriberDumpMatcher(cfg) : new TelecomSimSubscriberMatcher(repo, cfg),
+      useDumpMatcher && dumpMode === 'bridge'
+        ? new CellSubscriberBridgeMatcher(cfg)
+        : useDumpMatcher && dumpMode === 'cell-indexed'
+          ? new PostgresSubscriberCellMatcher(cfg)
+          : useDumpMatcher
+            ? new PostgresSubscriberDumpMatcher(cfg)
+            : new TelecomSimSubscriberMatcher(repo, cfg),
     );
 
     return {

@@ -89,13 +89,57 @@ export const envSchema = z.object({
 
   // ---- Real C-DOT subscriber dump (requirement #4, real-data path) ---------
   // When set to a real table name (e.g. subscriber_dump), module 03/04 matches
-  // subscribers by point-in-polygon against the dump's geometry column instead
-  // of joining the sim's `subscribers` table by cell_id. Empty = disabled.
+  // subscribers against that table instead of joining the sim's `subscribers`
+  // table by cell_id. Empty = disabled.
   SUBSCRIBER_DUMP_TABLE: strFromEnv(''),
   SUBSCRIBER_DUMP_MSISDN_COL: strFromEnv('msisdn'),
   SUBSCRIBER_DUMP_GEOM_COL: strFromEnv('geom'),
-  /** Safety cap on matched subscribers per polygon lookup. */
+  /**
+   * B-tree indexed cell column on the dump (migration 005 adds it and backfills
+   * it from the nearest `telecom_master` cell). The two-stage path joins the
+   * polygon-resolved tower cell_ids against this column with an index seek —
+   * never a scan over the whole dump.
+   */
+  SUBSCRIBER_DUMP_CELL_COL: strFromEnv('cell_id'),
+  /**
+   * How the real dump is matched at scale:
+   *   bridge (default)  : full-relational cell → (lac,cisac) → indexed
+   *                        subscriber_dump JOIN via cell_subscriber_mapping
+   *                        (Phase 4/5 — the production architecture).
+   *   cell-indexed      : legacy `cell_id = ANY($1)` against a B-tree cell_id
+   *                        column (only valid if the dump actually has one).
+   *   polygon           : point-in-polygon against the GiST `geom` column
+   *                        (the older direct path; can be slow on big zones).
+   */
+  SUBSCRIBER_DUMP_LOOKUP_MODE: z.enum(['bridge', 'cell-indexed', 'polygon']).default('bridge'),
+  /** Safety cap on matched subscribers per lookup. */
   SUBSCRIBER_DUMP_MATCH_LIMIT: intFromEnvNonZero(100_000),
+
+  // ---- Cell -> LAC/CISAC bridge (Phase 2/4/5) ------------------------------
+  // The production lookup does NOT scan the 100M dump by a fabricated cell_id.
+  // Instead it resolves target cell_ids -> (lac, cisac) through this mapping
+  // table, then JOINs subscriber_dump on the (lac, cisac) composite index.
+  // This is the real subscriber-location key the dump actually carries.
+  CELL_SUBSCRIBER_MAPPING_TABLE: strFromEnv('cell_subscriber_mapping'),
+  /** Column names on the mapping table (point at the real C-DOT master later). */
+  CELL_MAPPING_COL_CELL: strFromEnv('cell_id'),
+  CELL_MAPPING_COL_LAC: strFromEnv('lac'),
+  CELL_MAPPING_COL_CISAC: strFromEnv('cisac'),
+  /** Column named on subscriber_dump for the composite lookup key. */
+  SUBSCRIBER_DUMP_LAC_COL: strFromEnv('lac'),
+  SUBSCRIBER_DUMP_CISAC_COL: strFromEnv('cisac'),
+  /**
+   * Recipients drained per stream batch from the matched subscriber set and
+   * handed to the SMPP/SMSC boundary (module 08). Tuned by benchmark; the
+   * production requirement is to never hold the whole recipient list in RAM.
+   */
+  RECIPIENT_BATCH_SIZE: intFromEnvNonZero(10_000),
+  /**
+   * Hard cap on concurrent alert subscriber-match operations (Phase 16).
+   * Each alert runs its own independent relational join; this bounds how many
+   * can legitimately hold a DB client / temp staging table at once.
+   */
+  MAX_ALERT_WORKERS: intFromEnvNonZero(4),
 
   // ---- Matching ----
   MATCH_TIME_BUDGET_MS: intFromEnvNonZero(60_000),

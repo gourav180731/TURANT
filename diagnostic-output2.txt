@@ -1,0 +1,100 @@
+Γùç injected env (99) from .env // tip: Γîÿ suppress logs { quiet: true }
+
+==========================================================================================
+  FAST TOTAL COUNTS (pg_class.reltuples, no scans)
+==========================================================================================
+
+--- Approximate row counts ---
+[54.3 ms] rows: 6
+----------------------------------------
+table_name      | approx_rows | pages_8k
+----------------------------------------
+cell_towers     | 74868       | 25000   
+sim_cell_towers | 50000       | 12500   
+subscriber_dump | 68220704    | 4012960 
+subscribers     | -1          | 0       
+target_cells    | 100         | 1       
+telecom_master  | -1          | 0       
+
+--- Exact COUNT: target_cells, cell_towers, telecom_master ---
+[385.3 ms] rows: 5
+--------------------------
+t               | count   
+--------------------------
+target_cells    | 100     
+telecom_master  | 5       
+subscribers     | 2000    
+cell_towers     | 50000   
+sim_cell_towers | 50000   
+
+==========================================================================================
+  PG_STATS APPROXIMATE STATISTICS
+==========================================================================================
+
+--- subscribers: cell_id, msisdn stats approx ---
+[9.6 ms] rows: 0
+
+--- subscriber_dump: lac, cisac, msisdn stats approx ---
+[2.5 ms] rows: 5
+-----------------------------------------------
+attname  | n_distinct | null_frac | top_vals   
+-----------------------------------------------
+imsi     | -1         | 0         | <truncated>
+msisdn   | -1         | 0         | <truncated>
+lac      | 17         | 0         | <truncated>
+cisac    | 66219      | 0         | <truncated>
+geom     | -1         | 0         | <truncated>
+
+==========================================================================================
+  TARGET_CELLS ANALYSIS
+==========================================================================================
+
+--- target_cells: sample 50 (look for LAC-CISAC pattern) ---
+[5.7 ms] rows: 50
+-----------------------------------------
+cell_id  | len      | dash_pos | shape   
+-----------------------------------------
+10000    | 5        | 0        | HEX     
+10001    | 5        | 0        | HEX     
+10002    | 5        | 0        | HEX     
+10003    | 5        | 0        | HEX     
+10004    | 5        | 0        | HEX     
+10005    | 5        | 0        | HEX     
+10006    | 5        | 0        | HEX     
+10007    | 5        | 0        | HEX     
+10008    | 5        | 0        | HEX     
+10009    | 5        | 0        | HEX     
+1000A    | 5        | 0        | HEX     
+1000B    | 5        | 0        | HEX     
+1000C    | 5        | 0        | HEX     
+1000D    | 5        | 0        | HEX     
+1000E    | 5        | 0        | HEX     
+1000F    | 5        | 0        | HEX     
+10010    | 5        | 0        | HEX     
+10011    | 5        | 0        | HEX     
+10012    | 5        | 0        | HEX     
+10013    | 5        | 0        | HEX     
+10014    | 5        | 0        | HEX     
+10015    | 5        | 0        | HEX     
+10016    | 5        | 0        | HEX     
+10017    | 5        | 0        | HEX     
+10018    | 5        | 0        | HEX     
+10019    | 5        | 0        | HEX     
+1001A    | 5        | 0        | HEX     
+1001B    | 5        | 0        | HEX     
+1001C    | 5        | 0        | HEX     
+1001D    | 5        | 0        | HEX     
+... (20 more rows)
+
+--- target_cells: shape breakdown ---
+[1.6 ms] rows: 1
+-------------------
+shape    | n       
+-------------------
+HEX      | 100     
+
+==========================================================================================
+  MAPPING VERIFICATION: target_cells ΓåÆ subscriber_dump
+==========================================================================================
+
+--- Split target_cells by dash, check overlap with subscriber_dump (LAC, CISAC) using EXISTS ---

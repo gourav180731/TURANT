@@ -17,7 +17,9 @@ export { TelecomSimulator, createSubscriberRepository } from './services/simulat
 export type { SimBootResult } from './services/simulator.js';
 export { TelecomSimSubscriberMatcher } from './matcher/telecom-subscriber-matcher.js';
 export { PostgresSubscriberDumpMatcher } from './matcher/subscriber-dump-matcher.js';
+export { PostgresSubscriberCellMatcher } from './matcher/subscriber-cell-matcher.js';
 export { buildSubscriberDumpZoneQuery } from './matcher/subscriber-dump-sql.js';
+export { buildSubscriberCellQuery } from './matcher/subscriber-cell-sql.js';
 export { getTowerStore, InMemoryTowerStore } from './tower-store.js';
 export { createTelecomSimDebugRoutes } from './debug-routes.js';
 export * from './entities/telecom-subscriber.js';

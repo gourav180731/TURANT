@@ -290,6 +290,40 @@ schema (same config-driven pattern as the tower adapter) and implement
 `SubscriberRepository` against it — the pipeline code does not change. See
 `docs/telecom-simulation.md` for the full design.
 
+### Real 100M-row subscriber dump — two-stage, cell-indexed matching
+
+When C-DOT's real dump is available (`SUBSCRIBER_DUMP_TABLE`), module 03/04 no
+longer needs the sim: it matches subscribers against the real table using the
+**two-stage path** — `POLYGON → CELLS → INDEXED SUBSCRIBER LOOKUP`:
+
+1. **Polygon → cells.** Module 02 already resolves the alert zone to its
+   covering towers (each carrying a `cellId`).
+2. **Cells → subscribers.** `PostgresSubscriberCellMatcher` turns those cell ids
+   into ONE indexed query — `cell_id = ANY($1::text[])` — against the dump's
+   B-tree index. A plain index seek, never a scan over the 100M rows.
+
+Migration `src/persistence/migrations/005_subscriber_dump_cell_index.sql` adds
+the `cell_id` column to the dump (backfilled from the nearest `telecom_master`
+cell) and creates `idx_subscriber_dump_cell_id`. For the indexed path to be
+coherent, resolve towers from the same cell namespace:
+`TOWER_TABLE=telecom_master`.
+
+```bash
+# .env — two-stage cell-indexed matching on the real dump
+DATABASE_URL=postgres://user:pass@host:5432/turant
+TOWER_TABLE=telecom_master
+SUBSCRIBER_DUMP_TABLE=subscriber_dump
+SUBSCRIBER_DUMP_MSISDN_COL=msisdn
+SUBSCRIBER_DUMP_CELL_COL=cell_id
+SUBSCRIBER_DUMP_LOOKUP_MODE=cell-indexed   # default
+```
+
+The legacy `SUBSCRIBER_DUMP_LOOKUP_MODE=polygon` keeps the older direct
+point-in-polygon path (`PostgresSubscriberDumpMatcher`, GiST `geom`) for
+smaller/city-level zones where a geometry scan is acceptable. Both paths are
+transaction-bound with `MATCH_TIME_BUDGET_MS` so an oversized zone halts
+visibly instead of hanging the pipeline.
+
 ## Running against the real tower DB (module 02)
 
 ```bash
