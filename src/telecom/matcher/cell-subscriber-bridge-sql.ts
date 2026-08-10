@@ -11,7 +11,7 @@ import type { ParsedEnvConfig } from '../../config/env.js';
  *   target_staging       (one temp table per alert, loaded ONCE)
  *        |
  *        v
- *   cell_subscriber_mapping (cell_id -> lac, cisac)  -> resolved set
+ *   cell_network_mapping (cell_id -> lac, cisac)  -> resolved set
  *        |
  *        v
  *   (lac, cisac) JOIN subscriber_dump    (composite index seek, never seq scan)
@@ -99,7 +99,7 @@ export function buildMatchStatsSql(cfg: ParsedEnvConfig): { text: string } {
       resolved_cells AS (
         SELECT t.cell_id
         FROM target t
-        JOIN ${cfg.CELL_SUBSCRIBER_MAPPING_TABLE} m
+        JOIN ${cfg.CELL_NETWORK_MAPPING_TABLE} m
           ON m.${cfg.CELL_MAPPING_COL_CELL} = t.cell_id
         GROUP BY t.cell_id
       ),
@@ -107,7 +107,7 @@ export function buildMatchStatsSql(cfg: ParsedEnvConfig): { text: string } {
         SELECT DISTINCT m.${cfg.CELL_MAPPING_COL_LAC} AS lac,
                         m.${cfg.CELL_MAPPING_COL_CISAC} AS cisac
         FROM target t
-        JOIN ${cfg.CELL_SUBSCRIBER_MAPPING_TABLE} m
+        JOIN ${cfg.CELL_NETWORK_MAPPING_TABLE} m
           ON m.${cfg.CELL_MAPPING_COL_CELL} = t.cell_id
       ),
       agg AS (
@@ -122,7 +122,7 @@ export function buildMatchStatsSql(cfg: ParsedEnvConfig): { text: string } {
         SELECT (SELECT COUNT(*) FROM target)              AS target_cell_count,
                (SELECT COUNT(*) FROM resolved_cells)       AS resolved_cells,
                (SELECT COUNT(*) FROM target t
-                 WHERE NOT EXISTS (SELECT 1 FROM ${cfg.CELL_SUBSCRIBER_MAPPING_TABLE} m
+                 WHERE NOT EXISTS (SELECT 1 FROM ${cfg.CELL_NETWORK_MAPPING_TABLE} m
                                     WHERE m.${cfg.CELL_MAPPING_COL_CELL} = t.cell_id))
                                                         AS unresolved_cells,
                (SELECT COUNT(*) FROM resolved_areas)      AS resolved_areas,
@@ -144,7 +144,7 @@ export function buildStreamRecipientsSql(cfg: ParsedEnvConfig): { text: string }
     text: `
       SELECT DISTINCT s.${cfg.SUBSCRIBER_DUMP_MSISDN_COL} AS msisdn
       FROM turant_target_cells t
-      JOIN ${cfg.CELL_SUBSCRIBER_MAPPING_TABLE} m
+      JOIN ${cfg.CELL_NETWORK_MAPPING_TABLE} m
         ON m.${cfg.CELL_MAPPING_COL_CELL} = t.cell_id
       JOIN ${cfg.SUBSCRIBER_DUMP_TABLE} s
         ON s.${cfg.SUBSCRIBER_DUMP_LAC_COL} = m.${cfg.CELL_MAPPING_COL_LAC}

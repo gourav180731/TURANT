@@ -104,7 +104,7 @@ export const envSchema = z.object({
   /**
    * How the real dump is matched at scale:
    *   bridge (default)  : full-relational cell → (lac,cisac) → indexed
-   *                        subscriber_dump JOIN via cell_subscriber_mapping
+   *                        subscriber_dump JOIN via cell_network_mapping
    *                        (Phase 4/5 — the production architecture).
    *   cell-indexed      : legacy `cell_id = ANY($1)` against a B-tree cell_id
    *                        column (only valid if the dump actually has one).
@@ -120,6 +120,14 @@ export const envSchema = z.object({
   // Instead it resolves target cell_ids -> (lac, cisac) through this mapping
   // table, then JOINs subscriber_dump on the (lac, cisac) composite index.
   // This is the real subscriber-location key the dump actually carries.
+  /**
+   * Canonical Cell -> (lac, cisac) network-mapping layer (Phase 5/6).
+   * Populated by `scripts/ingest-cell-mapping.ts` with source='synthetic_test_mapping'
+   * (deterministic real-dump-sampled areas) until a real C-DOT master is imported.
+   * See src/persistence/migrations/007_cell_network_mapping.sql.
+   */
+  CELL_NETWORK_MAPPING_TABLE: strFromEnv('cell_network_mapping'),
+  /** Backward-compat alias for deployments that pinned the old table name. */
   CELL_SUBSCRIBER_MAPPING_TABLE: strFromEnv('cell_subscriber_mapping'),
   /** Column names on the mapping table (point at the real C-DOT master later). */
   CELL_MAPPING_COL_CELL: strFromEnv('cell_id'),

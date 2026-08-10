@@ -33,7 +33,7 @@ export interface CellBridgeMatchResult {
  *
  *   1. stages the target cell ids into a per-session TEMP table (loaded once,
  *      deduplicated on the way in) — no 50k-element ANY, no per-cell SELECTs;
- *   2. resolves them to (lac, cisac) through `cell_subscriber_mapping`;
+ *   2. resolves them to (lac, cisac) through `cell_network_mapping`;
  *   3. joins subscriber_dump on the (lac, cisac) composite index
  *      (idx_subscriber_dump_lac_cisac) — an index seek, never a full scan;
  *   4. deduplicates MSISDNs at the SQL level (SELECT DISTINCT);
