@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet-draw';
 import type {
@@ -21,15 +21,80 @@ const INDIA_ZOOM = 5;
 
 const SEVERITIES: CapSeverity[] = ['Extreme', 'Severe', 'Moderate', 'Minor'];
 
+/**
+ * Ray-casting point-in-polygon test. The backend coverage match can return
+ * towers whose center sits *outside* the drawn ring (coverage radius overlap).
+ * Red markers are display-only and must reflect towers that are actually inside
+ * the polygon the senior drew, so we filter to ring interiors here.
+ */
+function isInsidePolygon(ring: readonly [number, number][], lat: number, lng: number): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [latI, lngI] = ring[i]!;
+    const [latJ, lngJ] = ring[j]!;
+    if (lngI > lng !== lngJ > lng && lat < ((latJ - latI) * (lng - lngI)) / (lngJ - lngI) + latI) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+/**
+ * Extract the outer-ring coordinates from any Polygon shape returned by
+ * Leaflet. getLatLngs() returns LatLng[] | LatLng[][] | LatLng[][][] depending
+ * on flat / holes / multi-polygon. We always want the first (outer) ring.
+ */
+function extractOuterRing(polygon: L.Polygon): L.LatLng[] {
+  const raw = polygon.getLatLngs() as L.LatLng[] | L.LatLng[][] | L.LatLng[][][];
+  if (raw.length === 0) return [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const first = raw[0] as any;
+  if (first && typeof first === 'object' && 'lat' in first) {
+    return raw as L.LatLng[];
+  }
+  const level2 = (raw as L.LatLng[][])[0];
+  if (!level2 || level2.length === 0) return [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const first2 = level2[0] as any;
+  if (first2 && typeof first2 === 'object' && 'lat' in first2) {
+    return level2 as L.LatLng[];
+  }
+  // Multi-polygon with holes: peel a second level.
+  const level3 = (level2 as unknown as L.LatLng[][])[0];
+  return (level3 as L.LatLng[]) ?? [];
+}
+
+/** Convert a drawn ring to open [lat, lng] pairs (drop the auto-closed tail). */
+function ringToCoords(ring: L.LatLng[]): [number, number][] {
+  if (ring.length >= 2) {
+    const first = ring[0];
+    const last = ring[ring.length - 1];
+    if (first.equals(last)) {
+      return ring.slice(0, -1).map((ll) => [ll.lat, ll.lng] as [number, number]);
+    }
+  }
+  return ring.map((ll) => [ll.lat, ll.lng] as [number, number]);
+}
+
+interface AlertRun {
+  capIdentifier: string;
+  statusUrl: string;
+  expiresAt: string;
+  polygon: [number, number][];
+  status?: PipelineStatus;
+  towers?: TowerMarker[] | null;
+}
+
 export function App() {
   const mapRef = useRef<L.Map | null>(null);
   const layerRef = useRef<L.FeatureGroup | null>(null);
   const markerLayerRef = useRef<L.LayerGroup | null>(null);
+  const coverageLayerRef = useRef<L.LayerGroup | null>(null);
 
   const [clusters, setClusters] = useState<ClustersResponse | null>(null);
   const [clustersError, setClustersError] = useState<string | null>(null);
 
-  const [polygon, setPolygon] = useState<[number, number][] | null>(null);
+  const [polygons, setPolygons] = useState<[number, number][][]>([]);
   const [message, setMessage] = useState('');
   const [severity, setSeverity] = useState<CapSeverity>('Severe');
   const [hazardType, setHazardType] = useState('');
@@ -37,11 +102,8 @@ export function App() {
 
   const [busy, setBusy] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
-  const [alert, setAlert] = useState<{ capIdentifier: string; statusUrl: string; expiresAt: string } | null>(null);
-  const [status, setStatus] = useState<PipelineStatus | null>(null);
-  const [towers, setTowers] = useState<TowerMarker[] | null>(null);
+  const [runs, setRuns] = useState<AlertRun[]>([]);
   const [report, setReport] = useState<DeliveryReport | null>(null);
-  const [traceRef, setTraceRef] = useState<string | null>(null);
 
   // ---- Map + clusters -------------------------------------------------------
   useEffect(() => {
@@ -103,7 +165,6 @@ export function App() {
       const _origInitialize = DrawPoly.prototype.initialize;
       DrawPoly.prototype.initialize = function (this: unknown, ...args: unknown[]) {
         _origInitialize.apply(this, args);
-        // Override the `_flat` property on this instance to the public API.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const self = this as any;
         Object.defineProperty(self, '_flat', {
@@ -112,7 +173,6 @@ export function App() {
             return L.LineUtil.isFlat(this._latlngs || []);
           },
           set(v: boolean) {
-            // leaflet-draw only reads _flat, but tolerate writes silently.
             void v;
           },
         });
@@ -133,6 +193,14 @@ export function App() {
     markers.addTo(map);
     markerLayerRef.current = markers;
 
+    // Coverage fill layer: shades each drawn polygon so the alert zone reads as
+    // fully covered even where no tower center physically exists (the seeded
+    // towers only occupy a ~50x58 km region around Delhi). Real tower markers
+    // are drawn on top at their exact positions, so no data is invented.
+    const coverage = new L.LayerGroup();
+    coverage.addTo(map);
+    coverageLayerRef.current = coverage;
+
     // Polygon draw tool (leaflet-draw).
     const drawControl = new L.Control.Draw({
       edit: { featureGroup: drawn },
@@ -147,65 +215,26 @@ export function App() {
     });
     map.addControl(drawControl);
 
-    // Extract outer-ring coordinates from any Polygon shape returned by
-    // Leaflet. getLatLngs() returns LatLng[] | LatLng[][] | LatLng[][][]
-    // depending on flat / holes / multi-polygon. We always want the first
-    // (outer) ring.
-    const extractOuterRing = (polygon: L.Polygon): L.LatLng[] => {
-      const raw = polygon.getLatLngs() as L.LatLng[] | L.LatLng[][] | L.LatLng[][][];
-      if (raw.length === 0) return [];
-      // If the first element is a LatLng (has .lat), we already have the ring.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const first = raw[0] as any;
-      if (first && typeof first === 'object' && 'lat' in first) {
-        return raw as L.LatLng[];
-      }
-      // Otherwise it's nested at least one level — peel once.
-      const level2 = (raw as L.LatLng[][])[0];
-      if (!level2 || level2.length === 0) return [];
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const first2 = level2[0] as any;
-      if (first2 && typeof first2 === 'object' && 'lat' in first2) {
-        return level2 as L.LatLng[];
-      }
-      // Multi-polygon with holes: peel a second level.
-      const level3 = (level2 as unknown as L.LatLng[][])[0];
-      return (level3 as L.LatLng[]) ?? [];
-    };
-
-    const ringToCoords = (ring: L.LatLng[]): [number, number][] => {
-      // Exclude the auto-closed duplicate tail that Leaflet appends.
-      if (ring.length >= 2) {
-        const first = ring[0];
-        const last = ring[ring.length - 1];
-        if (first.equals(last)) {
-          return ring.slice(0, -1).map((ll) => [ll.lat, ll.lng] as [number, number]);
+    /** Rebuild the polygons state from every configured shape in the group. */
+    const syncPolygons = () => {
+      const rings: [number, number][][] = [];
+      drawn.eachLayer((lyr) => {
+        if (lyr instanceof L.Polygon) {
+          rings.push(ringToCoords(extractOuterRing(lyr)));
         }
-      }
-      return ring.map((ll) => [ll.lat, ll.lng] as [number, number]);
+      });
+      setPolygons(rings);
     };
 
     const onCreated = (e: L.LeafletEvent) => {
       const layer = (e as { layer: L.Polygon }).layer as L.Polygon;
       drawn.addLayer(layer);
-      const ring = extractOuterRing(layer);
-      setPolygon(ringToCoords(ring));
+      syncPolygons();
     };
 
-    const onEdited = () => {
-      // On edit, the FeatureGroup contains the (single) updated polygon.
-      let ring: L.LatLng[] = [];
-      drawn.eachLayer((lyr) => {
-        if (lyr instanceof L.Polygon) {
-          ring = extractOuterRing(lyr);
-        }
-      });
-      setPolygon(ring.length ? ringToCoords(ring) : null);
-    };
+    const onEdited = () => syncPolygons();
 
-    const onDeleted = () => {
-      setPolygon(null);
-    };
+    const onDeleted = () => syncPolygons();
 
     map.on(L.Draw.Event.CREATED, onCreated);
     map.on(L.Draw.Event.EDITED, onEdited);
@@ -244,33 +273,44 @@ export function App() {
       mapRef.current = null;
       layerRef.current = null;
       markerLayerRef.current = null;
+      coverageLayerRef.current = null;
     };
   }, []);
 
   // ---- Poll pipeline status until done, then fetch towers + report ---------
-  useEffect(() => {
-    if (!alert) return;
-    let cancelled = false;
+  // One real alert is created per drawn polygon, and each is polled on its own.
+  const runsKey = runs.map((r) => r.statusUrl).join(',');
 
-    const poll = async () => {
+  useEffect(() => {
+    if (runs.length === 0) return;
+    let cancelled = false;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+
+    const poll = async (runIndex: number) => {
+      const run = runs[runIndex]!;
       try {
-        const s = await fetchPipelineStatus(alert.statusUrl);
+        const s = await fetchPipelineStatus(run.statusUrl);
         if (cancelled) return;
-        setStatus(s);
-        setTraceRef(s.traceRef ?? null);
+        setRuns((prev) =>
+          prev.map((r, i) => (i === runIndex ? { ...r, status: s } : r)),
+        );
         if (s.status === 'completed' || s.status === 'halted') {
           // Fetch the real matched towers (only exists once tower resolution ran).
           if (s.status === 'completed') {
             try {
-              const t = await fetchTowers(alert.capIdentifier);
-              if (!cancelled) setTowers(t.towers);
+              const t = await fetchTowers(run.capIdentifier);
+              if (!cancelled) {
+                setRuns((prev) =>
+                  prev.map((r, i) => (i === runIndex ? { ...r, towers: t.towers } : r)),
+                );
+              }
             } catch {
               /* towers endpoint may 404 for a fresh/halted run — show none */
             }
           }
           // Fetch the real DLR delivery report (0 receipts unless SMPP is live).
           try {
-            const r = await fetchDeliveryReport(alert.capIdentifier);
+            const r = await fetchDeliveryReport(run.capIdentifier);
             if (!cancelled) setReport(r);
           } catch {
             /* report available once the trace is recorded */
@@ -278,60 +318,110 @@ export function App() {
           return;
         }
       } catch {
-        if (!cancelled) setStatus({ status: 'running', stage: 'polling', capIdentifier: alert.capIdentifier, updatedAtMs: Date.now() });
+        if (!cancelled) {
+          setRuns((prev) =>
+            prev.map((r, i) =>
+              i === runIndex
+                ? {
+                    ...r,
+                    status: {
+                      status: 'running',
+                      stage: 'polling',
+                      capIdentifier: r.capIdentifier,
+                      updatedAtMs: Date.now(),
+                    },
+                  }
+                : r,
+            ),
+          );
+        }
       }
       // 1s poll while running (the backend completes in ~100ms in-memory).
-      setTimeout(poll, 1000);
+      timers[runIndex] = setTimeout(() => poll(runIndex), 1000);
     };
 
-    poll();
+    runs.forEach((_, i) => poll(i));
     return () => {
       cancelled = true;
+      timers.forEach(clearTimeout);
     };
-  }, [alert]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runsKey]);
 
   // ---- Draw matched tower markers when they arrive --------------------------
+  // Each drawn polygon gets its own backend tower match. Red markers are drawn
+  // only for towers whose center is inside the ring they belong to — a polygon
+  // never inherits another polygon's towers. Backend counts stay untouched.
+  const insideByRun = useMemo(
+    () =>
+      runs.map((run) => {
+        if (!run.towers || !run.polygon || run.polygon.length < 3) return run.towers ?? [];
+        return run.towers.filter((t) => isInsidePolygon(run.polygon, t.latitude, t.longitude));
+      }),
+    [runs],
+  );
+
   useEffect(() => {
     const markers = markerLayerRef.current;
+    const coverage = coverageLayerRef.current;
     if (!markers) return;
     markers.clearLayers();
-    for (const t of towers ?? []) {
-      L.circleMarker([t.latitude, t.longitude], {
-        radius: 5,
-        color: '#dc2626',
+    // Shade every drawn polygon as an alert-coverage zone.
+    coverage?.clearLayers();
+    for (const ring of polygons) {
+      if (ring.length < 3) continue;
+      L.polygon(ring, {
+        color: '#ef4444',
         weight: 1,
-        fillColor: '#7f1d1d',
-        fillOpacity: 0.9,
-      })
-        .addTo(markers)
-        .bindTooltip(`cell ${t.cellId}`);
+        dashArray: '4 4',
+        fillColor: '#ef4444',
+        fillOpacity: 0.15,
+        opacity: 0.4,
+      }).addTo(coverage ?? markers);
     }
-  }, [towers]);
+    // Real tower markers — exact positions, inside their own polygon only.
+    for (const list of insideByRun) {
+      for (const t of list) {
+        L.circleMarker([t.latitude, t.longitude], {
+          radius: 5,
+          color: '#dc2626',
+          weight: 1,
+          fillColor: '#7f1d1d',
+          fillOpacity: 0.9,
+        })
+          .addTo(markers)
+          .bindTooltip(`cell ${t.cellId}`);
+      }
+    }
+  }, [insideByRun, polygons]);
 
   const send = async () => {
     setSendError(null);
-    if (!polygon || polygon.length < 3) {
-      setSendError('Draw a polygon on the map before sending.');
+    if (polygons.length === 0) {
+      setSendError('Draw at least one polygon on the map before sending.');
       return;
     }
     setBusy(true);
-    setStatus(null);
-    setTowers(null);
+    setRuns([]);
     setReport(null);
-    setTraceRef(null);
     try {
-      const res = await sendManualAlert({
-        polygon,
+      const base = {
         message: message.trim(),
         severity,
         expiresInMinutes,
         ...(hazardType.trim() ? { hazardType: hazardType.trim() } : {}),
-      });
-      setAlert({
-        capIdentifier: res.capIdentifier,
-        statusUrl: res.pipeline.statusUrl,
-        expiresAt: res.expiresAt,
-      });
+      };
+      const results = await Promise.all(
+        polygons.map((polygon) => sendManualAlert({ polygon, ...base })),
+      );
+      setRuns(
+        results.map((res, i) => ({
+          capIdentifier: res.capIdentifier,
+          statusUrl: res.pipeline.statusUrl,
+          expiresAt: res.expiresAt,
+          polygon: polygons[i]!,
+        })),
+      );
     } catch (err) {
       setSendError(String(err instanceof Error ? err.message : err));
     } finally {
@@ -340,15 +430,24 @@ export function App() {
   };
 
   const clearAlert = () => {
-    setAlert(null);
-    setStatus(null);
-    setTowers(null);
+    setRuns([]);
     setReport(null);
-    setTraceRef(null);
     markerLayerRef.current?.clearLayers();
+    coverageLayerRef.current?.clearLayers();
     layerRef.current?.clearLayers();
-    setPolygon(null);
+    setPolygons([]);
   };
+
+  const completedCount = runs.filter((r) => r.status?.status === 'completed').length;
+  const haltedCount = runs.filter((r) => r.status?.status === 'halted').length;
+  const pendingCount = runs.length - completedCount - haltedCount;
+  const totalTowers = runs.reduce((acc, r) => acc + (r.status?.towerCount ?? 0), 0);
+  const shownTowers = insideByRun.reduce((acc, list) => acc + list.length, 0);
+  const totalMatched = runs.reduce((acc, r) => acc + (r.status?.matchedCount ?? 0), 0);
+  const totalDuplicates = runs.reduce((acc, r) => acc + (r.status?.duplicatesRemoved ?? 0), 0);
+  const totalExpected = runs.reduce((acc, r) => acc + (r.status?.expectedRecipients ?? 0), 0);
+  const totalSubmitted = runs.reduce((acc, r) => acc + (r.status?.submittedCount ?? 0), 0);
+  const delivered = report?.delivered ?? 0;
 
   return (
     <div className="shell">
@@ -356,8 +455,8 @@ export function App() {
       <aside className="panel">
         <h1>TURANT · Polygon Alert Console</h1>
         <p className="hint">
-          Draw a polygon on the map (blue tool), fill in the alert, then send. All
-          figures come live from the real backend pipeline.
+          Draw one or more polygons on the map (blue tool), fill in the alert, then send. All
+          figures come live from the real backend pipeline — one alert per polygon.
         </p>
 
         <section className="controls">
@@ -400,8 +499,11 @@ export function App() {
           {sendError && <p className="error">{sendError}</p>}
         </section>
 
-        {polygon && (
-          <p className="note">Polygon drawn: {polygon.length} vertices</p>
+        {polygons.length > 0 && (
+          <p className="note">
+            {polygons.length} polygon{polygons.length === 1 ? '' : 's'} drawn (
+            {polygons.map((p) => p.length).join(', ')} vertices each)
+          </p>
         )}
         {clustersError && <p className="error">Clusters: {clustersError}</p>}
         {clusters && !clustersError && (
@@ -410,73 +512,79 @@ export function App() {
           </p>
         )}
 
-        {status && (
+        {runs.length > 0 && (
           <section className="results">
             <div className="row">
-              <span>Pipeline</span>
-              <span className={status.status}>
-                {status.status}
-                {status.status === 'running' && ` · ${status.stage}`}
+              <span>Polygons</span>
+              <span>
+                {runs.length} · {completedCount} done
+                {pendingCount > 0 && `, ${pendingCount} running`}
+                {haltedCount > 0 && `, ${haltedCount} halted`}
               </span>
             </div>
-            {status.reason && <div className="row reason">{status.reason}</div>}
-            {status.towerCount !== undefined && (
-              <div className="row">
-                <span>Towers matched</span>
-                <span>{status.towerCount}</span>
-              </div>
-            )}
-            {status.matchedCount !== undefined && (
+            {runs.map((run, i) => {
+              const matched = run.status?.towerCount ?? 0;
+              const state = run.status?.status ?? 'running';
+              return (
+                <div className="row" key={run.capIdentifier}>
+                  <span>Polygon {i + 1}</span>
+                  <span className={state}>
+                    {state}
+                    {run.status?.reason ? ` · ${run.status.reason}` : ''}
+                    {state === 'completed' ? ` · ${matched}` : ''}
+                  </span>
+                </div>
+              );
+            })}
+            <div className="row">
+              <span>Towers matched (total)</span>
+              <span>{totalTowers}</span>
+            </div>
+            {totalMatched > 0 && (
               <div className="row">
                 <span>Subscribers matched</span>
-                <span>{status.matchedCount}</span>
+                <span>{totalMatched}</span>
               </div>
             )}
-            {status.duplicatesRemoved !== undefined && (
+            {totalDuplicates >= 0 && runs.some((r) => r.status?.duplicatesRemoved !== undefined) && (
               <div className="row">
                 <span>Duplicates removed</span>
-                <span>{status.duplicatesRemoved}</span>
+                <span>{totalDuplicates}</span>
               </div>
             )}
-            {status.expectedRecipients !== undefined && (
+            {totalExpected > 0 && (
               <div className="row">
                 <span>Expected recipients</span>
-                <span>{status.expectedRecipients}</span>
+                <span>{totalExpected}</span>
               </div>
             )}
-            {status.submittedCount !== undefined && (
+            {totalSubmitted > 0 && (
               <div className="row">
                 <span>Messages submitted</span>
-                <span>{status.submittedCount}</span>
+                <span>{totalSubmitted}</span>
               </div>
             )}
             {report && (
               <div className="row">
                 <span>Delivered (real DLR)</span>
-                <span>{report.delivered}</span>
+                <span>{delivered}</span>
               </div>
             )}
-            {report &&
-              status?.submittedCount !== undefined &&
-              status.submittedCount - report.delivered > 0 && (
-                <div className="row">
-                  <span>Not yet delivered</span>
-                  <span>{status.submittedCount - report.delivered}</span>
-                </div>
-              )}
-            {alert && (
+            {runs[0] && (
               <div className="row">
                 <span>Expires</span>
-                <span>{new Date(alert.expiresAt).toLocaleTimeString()}</span>
+                <span>
+                  {new Date(runs.map((r) => r.expiresAt).sort((a, b) => +new Date(a) - +new Date(b))[0]!).toLocaleTimeString()}
+                </span>
               </div>
             )}
-            {towers && (
+            {runs.length > 0 && (
               <p className="note">
-                {towers.length} matched towers marked on the map.
+                {shownTowers} of {totalTowers} matched towers marked — each inside its own polygon.
+                Polygon areas are shaded as the alert coverage zone (towers exist only around Delhi).
               </p>
             )}
-            {traceRef && <p className="note">Trace: {traceRef}</p>}
-            {status.status === 'halted' && (
+            {haltedCount > 0 && (
               <p className="note">
                 Halted — no fabrication. Configure the missing real input to proceed.
               </p>
@@ -484,7 +592,7 @@ export function App() {
           </section>
         )}
 
-        {(status || alert) && (
+        {runs.length > 0 && (
           <button className="ghost" onClick={clearAlert}>
             Clear
           </button>
