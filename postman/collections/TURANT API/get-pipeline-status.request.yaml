@@ -1,0 +1,40 @@
+$kind: http-request
+name: 'GET pipeline status'
+method: GET
+url: '{{baseUrl}}/api/v1/alerts/:capIdentifier/pipeline-status'
+order: 4000
+pathVariables:
+  - key: capIdentifier
+    value: '{{capIdentifier}}'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('Status is 200 or 404', function () {
+        pm.expect(pm.response.code).to.be.oneOf([200, 404]);
+      });
+
+      const json = pm.response.json();
+
+      if (pm.response.code === 200) {
+        pm.test('Pipeline status shape is valid', function () {
+          pm.expect(json.status).to.be.a('string');
+          pm.expect(json.traceRef).to.be.a('string').and.include('/api/v1/traces/');
+        });
+
+        if (json.status === 'completed') {
+          pm.test('Completed pipeline has final stage', function () {
+            pm.expect(json.stage).to.exist;
+          });
+        }
+
+        if (json.status === 'halted') {
+          pm.test('Halted pipeline includes reason', function () {
+            pm.expect(json.reason).to.be.a('string').and.not.empty;
+          });
+        }
+      } else {
+        pm.test('404 contains error message', function () {
+          pm.expect(json.error).to.be.a('string').and.not.empty;
+        });
+      }

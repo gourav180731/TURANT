@@ -6,7 +6,10 @@ import type { TowerSource } from '../modules/02-cell-site-identification/tower-s
 import type { CellTower, GeoZone } from '../types/tower.js';
 import type { CapAlert } from '../types/cap.js';
 import { deduplicate } from '../modules/05-dedup/dedupe.js';
-import { orchestrateAlertPipeline } from '../modules/13-parallel-processing/orchestrator.js';
+import {
+  orchestrateAlertPipeline,
+  type OrchestrateResult,
+} from '../modules/13-parallel-processing/orchestrator.js';
 import { getSubscriberMatcher } from './subscriber-matcher.js';
 import {
   pipelineStatusStore,
@@ -207,10 +210,57 @@ export async function runDisseminationLeg(input: DisseminationInput): Promise<Pi
     matchedCount: matchedMsisdns.length,
     duplicatesRemoved: deduped.removedCount,
     expectedRecipients: deduped.deduplicated.length,
-    submittedCount: result.aggregate.total,
+    // Honest submission count: when SMPP credentials are absent the orchestrator
+    // reports awaitingCredentials=true and nothing was pushed to any SMSC, so
+    // submittedCount must be 0 — never the intended recipient list.
+    submittedCount: result.aggregate.awaitingCredentials ? 0 : result.aggregate.total,
+    awaitingCredentials: result.aggregate.awaitingCredentials || undefined,
+    acceptedCount: result.aggregate.accepted,
     updatedAtMs: Date.now(),
   };
   pipelineStatusStore.update(rec);
   log.info({ ...result.aggregate }, 'pipeline.completed');
+
+  // Module 12 — best-effort EWS completion callback (real report, DB fallback).
+  // Never awaited so a slow/absent EWS cannot delay the pipeline's own status.
+  void buildCompletionReportAndPush({
+    alertId,
+    capIdentifier,
+    rec,
+    aggregate: result.aggregate,
+  });
+
   return rec;
+}
+
+/**
+ * Build the real AlertReport from the completed run and push it to the EWS
+ * origin with a DB fallback (module 12). Never throws into the pipeline.
+ */
+export interface CompletionPushInput {
+  /** The ingest UUID (`alerts.id`), used as the report's foreign key. */
+  alertId: string;
+  capIdentifier: string;
+  rec: PipelineStatusRecord;
+  aggregate: OrchestrateResult['aggregate'];
+}
+
+async function buildCompletionReportAndPush(input: CompletionPushInput): Promise<void> {
+  const { buildAlertReport, pushCompletionReport } = await import('./report-builder.js');
+  try {
+    const report = await buildAlertReport({
+      alertId: input.alertId,
+      capIdentifier: input.capIdentifier,
+      targetedSubscriberCount: input.rec.expectedRecipients ?? 0,
+      submittedCount: input.rec.submittedCount ?? 0,
+      acceptedCount: input.rec.acceptedCount ?? 0,
+      deliveredCount: 0,
+      failedCount: input.aggregate.rejected + input.aggregate.failed + input.aggregate.exhaustedRetries,
+      expiredMessageCount: input.aggregate.gaveUpExpired,
+      towerCount: input.rec.towerCount ?? 0,
+    });
+    await pushCompletionReport(report);
+  } catch (err) {
+    logger.error({ err, capIdentifier: input.capIdentifier }, 'ews_report.build_failed');
+  }
 }

@@ -38,6 +38,14 @@ export interface PipelineStatusRecord {
   expectedRecipients?: number;
   /** SMS actually submitted through module 13 (set when the leg completes). */
   submittedCount?: number;
+  /**
+   * True when the submission leg could not run because SMPP credentials are
+   * absent (SMPP_HOST/SMPP_SYSTEM_ID unset) — submittedCount is then 0 even
+   * though intended recipients exist. Set when the leg completes.
+   */
+  awaitingCredentials?: boolean;
+  /** Messages the SMSC accepted (submit_sm success) — subset of submittedCount. */
+  acceptedCount?: number;
   updatedAtMs: number;
 }
 

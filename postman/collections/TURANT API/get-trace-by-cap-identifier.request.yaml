@@ -1,0 +1,28 @@
+$kind: http-request
+name: 'GET trace by capIdentifier'
+method: GET
+url: '{{baseUrl}}/api/v1/traces/:capIdentifier'
+order: 7000
+pathVariables:
+  - key: capIdentifier
+    value: '{{capIdentifier}}'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('Status is 200 or 404', function () {
+        pm.expect(pm.response.code).to.be.oneOf([200, 404]);
+      });
+
+      const json = pm.response.json();
+
+      if (pm.response.code === 200) {
+        pm.test('Trace response contains timing data', function () {
+          pm.expect(json.capIdentifier).to.be.a('string');
+          pm.expect(json.deltas).to.be.an('object');
+        });
+      } else {
+        pm.test('404 contains error message', function () {
+          pm.expect(json.error).to.be.a('string').and.not.empty;
+        });
+      }

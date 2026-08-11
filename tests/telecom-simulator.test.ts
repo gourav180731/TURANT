@@ -178,9 +178,11 @@ describe('telecom — end-to-end pipeline over HTTP (memory mode, no database)',
     expect(status?.stage).toBe('done');
     expect(status!.towerCount!).toBeGreaterThan(0);
     expect(status!.expectedRecipients!).toBeGreaterThan(0);
-    // No SMSC configured → every matched recipient is *attempted* through the
-    // real submission leg (which reports awaiting credentials rather than
-    // inventing deliveries), so the attempted count equals the deduped total.
-    expect(status!.submittedCount!).toBe(status!.expectedRecipients!);
+    // No SMSC credentials configured → the real submission leg reports
+    // awaitingCredentials=true and nothing was pushed to any SMSC. The honest
+    // contract is submittedCount === 0 (never the intended recipient list) so
+    // a viewer cannot mistake "intended" for "actually sent".
+    expect(status!.awaitingCredentials).toBe(true);
+    expect(status!.submittedCount!).toBe(0);
   });
 });

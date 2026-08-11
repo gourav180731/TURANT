@@ -1,0 +1,5 @@
+$kind: http-request
+name: 'GET sim clusters'
+method: GET
+url: '{{baseUrl}}/api/v1/sim/clusters'
+order: 9000

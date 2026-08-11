@@ -1,0 +1,22 @@
+$kind: http-request
+method: GET
+url: '{{baseUrl}}/healthz'
+order: 1000
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('Status is 200 or 503', function () {
+        pm.expect(pm.response.code).to.be.oneOf([200, 503]);
+      });
+
+      const json = pm.response.json();
+
+      pm.test('Health response contains core fields', function () {
+        pm.expect(json.app).to.be.a('string');
+        pm.expect(json.status).to.be.a('string');
+        pm.expect(json.uptimeSeconds).to.be.a('number');
+        pm.expect(json.db).to.exist;
+        pm.expect(json.redis).to.exist;
+        pm.expect(json.smpp).to.exist;
+      });

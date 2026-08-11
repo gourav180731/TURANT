@@ -1,0 +1,8 @@
+$kind: http-request
+name: 'DEBUG sim subscribers'
+method: GET
+url: '{{baseUrl}}/api/v1/debug/sim/subscribers'
+order: 13000
+queryParams:
+  - key: cellId
+    value: 'CELL-0001'

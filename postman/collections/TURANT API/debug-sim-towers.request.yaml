@@ -1,0 +1,5 @@
+$kind: http-request
+name: 'DEBUG sim towers'
+method: GET
+url: '{{baseUrl}}/api/v1/debug/sim/towers'
+order: 12000

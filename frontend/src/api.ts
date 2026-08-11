@@ -57,6 +57,8 @@ export interface PipelineStatus {
   duplicatesRemoved?: number;
   expectedRecipients?: number;
   submittedCount?: number;
+  awaitingCredentials?: boolean;
+  acceptedCount?: number;
   updatedAtMs: number;
   traceRef?: string;
 }

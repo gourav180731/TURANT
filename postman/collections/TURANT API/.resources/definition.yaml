@@ -1,0 +1,5 @@
+$kind: collection
+name: 'TURANT API'
+variables:
+  - key: baseUrl
+    value: 'http://127.0.0.1:8080'

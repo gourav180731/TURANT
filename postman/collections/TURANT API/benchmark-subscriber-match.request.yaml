@@ -1,0 +1,14 @@
+$kind: http-request
+name: 'POST benchmark subscriber match'
+method: POST
+url: '{{baseUrl}}/api/v1/benchmark/subscriber-match'
+order: 14000
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "cellIds": ["10000", "10001", "10002"]
+    }

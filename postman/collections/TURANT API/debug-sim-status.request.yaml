@@ -1,0 +1,5 @@
+$kind: http-request
+name: 'DEBUG sim status'
+method: GET
+url: '{{baseUrl}}/api/v1/debug/sim'
+order: 11000

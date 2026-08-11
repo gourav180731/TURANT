@@ -299,7 +299,10 @@ describe('manual-alert — POST /api/v1/alerts/manual (end-to-end over HTTP)', (
     expect(status!.matchedCount!).toBeGreaterThan(0);
     expect(status!.duplicatesRemoved!).toBeGreaterThanOrEqual(0);
     expect(status!.expectedRecipients!).toBeGreaterThan(0);
-    expect(status!.submittedCount!).toBe(status!.expectedRecipients!);
+    // No SMSC credentials → awaitingCredentials=true, and submittedCount is
+    // honestly 0 (nothing pushed to any SMSC), never the intended count.
+    expect(status!.awaitingCredentials).toBe(true);
+    expect(status!.submittedCount!).toBe(0);
   });
 
   it('exposes the real matched towers for the alert', async () => {

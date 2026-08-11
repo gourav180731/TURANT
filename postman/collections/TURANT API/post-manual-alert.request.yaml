@@ -1,0 +1,66 @@
+$kind: http-request
+name: 'POST manual alert'
+method: POST
+url: '{{baseUrl}}/api/v1/alerts/manual'
+order: 3000
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "polygon": [
+        [28.55, 77.15],
+        [28.55, 77.27],
+        [28.63, 77.30],
+        [28.68, 77.27],
+        [28.68, 77.15],
+        [28.63, 77.12]
+      ],
+      "message": "Manual flood alert for south Delhi",
+      "severity": "Severe",
+      "expiresInMinutes": 60,
+      "hazardType": "Flood"
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('Status is 202', function () {
+        pm.response.to.have.status(202);
+      });
+
+      const json = pm.response.json();
+
+      pm.test('Response contains alert identifiers', function () {
+        pm.expect(json.alertId).to.be.a('string').and.not.empty;
+        pm.expect(json.capIdentifier).to.be.a('string').and.not.empty;
+        pm.expect(json.expiresAt).to.be.a('string').and.not.empty;
+      });
+
+      pm.test('Pipeline status URL is present', function () {
+        pm.expect(json.pipeline).to.be.an('object');
+        pm.expect(json.pipeline.statusUrl).to.be.a('string').and.include('/pipeline-status');
+      });
+
+      if (json.capIdentifier) {
+        pm.collectionVariables.set('capIdentifier', json.capIdentifier);
+      }
+
+      if (json.pipeline && json.pipeline.statusUrl) {
+        pm.collectionVariables.set('pipelineStatusUrl', json.pipeline.statusUrl);
+      }
+
+      if (json.alertId) {
+        pm.collectionVariables.set('alertId', json.alertId);
+      }
+
+      if (json.expiresAt) {
+        pm.collectionVariables.set('expiresAt', json.expiresAt);
+      }
+
+      console.log('Saved capIdentifier:', pm.collectionVariables.get('capIdentifier'));
+      console.log('Saved pipelineStatusUrl:', pm.collectionVariables.get('pipelineStatusUrl'));
+      console.log('Saved alertId:', pm.collectionVariables.get('alertId'));
+      console.log('Saved expiresAt:', pm.collectionVariables.get('expiresAt'));

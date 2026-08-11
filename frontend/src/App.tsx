@@ -447,6 +447,8 @@ export function App() {
   const totalDuplicates = runs.reduce((acc, r) => acc + (r.status?.duplicatesRemoved ?? 0), 0);
   const totalExpected = runs.reduce((acc, r) => acc + (r.status?.expectedRecipients ?? 0), 0);
   const totalSubmitted = runs.reduce((acc, r) => acc + (r.status?.submittedCount ?? 0), 0);
+  const awaitingCredentials = runs.some((r) => r.status?.awaitingCredentials);
+  const submittedLabel = `${totalSubmitted}${awaitingCredentials ? ' · awaiting SMSC credentials' : ''}`;
   const delivered = report?.delivered ?? 0;
 
   return (
@@ -558,10 +560,10 @@ export function App() {
                 <span>{totalExpected}</span>
               </div>
             )}
-            {totalSubmitted > 0 && (
+            {totalSubmitted >= 0 && runs.some((r) => r.status?.submittedCount !== undefined) && (
               <div className="row">
                 <span>Messages submitted</span>
-                <span>{totalSubmitted}</span>
+                <span>{submittedLabel}</span>
               </div>
             )}
             {report && (

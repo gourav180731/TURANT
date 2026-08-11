@@ -1,0 +1,27 @@
+$kind: http-request
+name: 'GET delivery report'
+method: GET
+url: '{{baseUrl}}/api/v1/alerts/:capIdentifier/report'
+order: 8000
+pathVariables:
+  - key: capIdentifier
+    value: '{{capIdentifier}}'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('Status is 200 or 500', function () {
+        pm.expect(pm.response.code).to.be.oneOf([200, 500]);
+      });
+
+      const json = pm.response.json();
+
+      if (pm.response.code === 200) {
+        pm.test('Delivery report returns JSON object', function () {
+          pm.expect(json).to.be.an('object');
+        });
+      } else {
+        pm.test('500 contains error message', function () {
+          pm.expect(json.error).to.be.a('string').and.not.empty;
+        });
+      }

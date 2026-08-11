@@ -45,6 +45,21 @@ export class PostgisTowerSource implements TowerSource {
       // (SET LOCAL is a no-op outside an explicit transaction block).
       await client.query('BEGIN');
       await client.query(`SET LOCAL statement_timeout = ${cfg.TOWER_MATCH_TIME_BUDGET_MS}`);
+      // Loud guard for the polygon coverage model: it reads coverage_geom, so
+      // an all-NULL column must surface as a misconfiguration error — never as
+      // an empty tower list that looks like "no towers in the zone".
+      if (cfg.TOWER_COVERAGE_MODEL !== 'radius') {
+        const colGeom = cfg.TOWER_COL_COVERAGE_GEOM;
+        const pre = await client.query<{ n: string }>(
+          `SELECT COUNT(*)::text AS n FROM ${cfg.TOWER_TABLE} WHERE ${colGeom} IS NOT NULL`,
+        );
+        if (Number(pre.rows[0]?.n ?? 0) === 0) {
+          await client.query('ROLLBACK').catch(() => undefined);
+          throw new Error(
+            `TOWER_COVERAGE_MODEL=${cfg.TOWER_COVERAGE_MODEL} requires a non-null ${cfg.TOWER_TABLE}.${colGeom}, but every row is NULL. Use TOWER_COVERAGE_MODEL=radius or populate ${colGeom}.`,
+          );
+        }
+      }
       const { text, values } = buildTowerZoneQuery(cfg, zone, limit);
       const started = performance.now();
       const result = await client.query<TowerRow>(text, values);
