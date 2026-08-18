@@ -169,12 +169,23 @@ export async function runDisseminationLeg(input: DisseminationInput): Promise<Pi
 
   const matches = await matcher.matchSubscribers(towers, { alertId, capIdentifier, zone });
   const matchedMsisdns = matches.flatMap((m) => m.msisdns);
+
+  // NO-FABRICATION RULE: reported counts come from the DB matcher's UNBOUNDED
+  // stats query (rawMatchedRows / uniqueSubscribers) when present — never from
+  // the materialised `msisdns` working set, which may be bounded by
+  // `SUBSCRIBER_DUMP_MATCH_LIMIT`. Fallbacks apply only to simulator matchers.
+  const reportedRows = matches.reduce((s, m) => s + (m.rawMatchedRows ?? m.msisdns.length), 0);
+  const reportedUnique = matches.reduce(
+    (s, m) => s + (m.uniqueSubscribers ?? new Set(m.msisdns).size),
+    0,
+  );
+
   pipelineStatusStore.update({
     capIdentifier,
     status: 'running',
     stage: 'subscriber-matching',
     towerCount: towers.length,
-    matchedCount: matchedMsisdns.length,
+    matchedCount: reportedRows,
     updatedAtMs: Date.now(),
   });
 
@@ -185,12 +196,18 @@ export async function runDisseminationLeg(input: DisseminationInput): Promise<Pi
     status: 'running',
     stage: 'dedup',
     towerCount: towers.length,
-    matchedCount: matchedMsisdns.length,
-    duplicatesRemoved: deduped.removedCount,
-    expectedRecipients: deduped.deduplicated.length,
+    matchedCount: reportedRows,
+    // Honest DB-derived duplicate count: matched rows minus the distinct
+    // subscriber count the dump provides. In-memory dedup is still run for the
+    // SMPP submission list but never gates the reported numbers.
+    duplicatesRemoved: reportedRows - reportedUnique,
+    expectedRecipients: reportedUnique,
     updatedAtMs: Date.now(),
   });
-  log.info({ original: matchedMsisdns.length, deduplicated: deduped.deduplicated.length }, 'pipeline.dedup.completed');
+  log.info(
+    { raw: reportedRows, unique: reportedUnique, inMemDedup: deduped.deduplicated.length },
+    'pipeline.dedup.completed',
+  );
 
   // Modules 06/13 — real submission through module 13 (worker_threads default).
   const content = alert.info.headline ?? alert.info.description ?? alert.info.event;
@@ -207,9 +224,9 @@ export async function runDisseminationLeg(input: DisseminationInput): Promise<Pi
     status: 'completed',
     stage: 'done',
     towerCount: towers.length,
-    matchedCount: matchedMsisdns.length,
-    duplicatesRemoved: deduped.removedCount,
-    expectedRecipients: deduped.deduplicated.length,
+    matchedCount: reportedRows,
+    duplicatesRemoved: reportedRows - reportedUnique,
+    expectedRecipients: reportedUnique,
     // Honest submission count: when SMPP credentials are absent the orchestrator
     // reports awaitingCredentials=true and nothing was pushed to any SMSC, so
     // submittedCount must be 0 — never the intended recipient list.

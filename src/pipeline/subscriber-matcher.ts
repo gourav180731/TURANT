@@ -20,6 +20,16 @@ export interface SubscriberMatch {
   towerId: string;
   /** Real MSISDNs inside that tower's coverage. */
   msisdns: string[];
+  /**
+   * True DB-derived matched-row count — UNBOUNDED (never `LIMIT`-capped).
+   * Present on the real dump matchers. When omitted the pipeline falls back to
+   * `msisdns.length`. NO-FABRICATION RULE: this is the number that must be
+   * reported to the user; the materialised `msisdns` array may be a bounded
+   * working set for the SMPP boundary.
+   */
+  rawMatchedRows?: number;
+  /** True DB-derived distinct-subscriber count (COUNT(DISTINCT msisdn) or imsi). */
+  uniqueSubscribers?: number;
 }
 
 export interface SubscriberMatchContext {

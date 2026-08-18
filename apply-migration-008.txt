@@ -1,0 +1,20 @@
+Γùç injected env (99) from .env // tip: Γùê secrets for agents [www.dotenvx.com]
+
+==============================================================================================================
+  PRE-MIGRATION: STATS SNAPSHOT + IN-PLACE SNAPSHOT TABLES
+==============================================================================================================
+  Γ£à Create stats snapshot table (fast ΓÇö row count + pg_class estimate)  [18082.2 ms]
+  Γ£à Snapshot cell_network_mapping (150K rows ΓÇö full copy)  [845.9 ms]
+  Γ£à Snapshot cell_subscriber_mapping (50K rows)  [100.6 ms]
+  Γ£à Snapshot sim_seeder_checkpoints  [14.6 ms]
+
+  SNAPSHOT STATS (baseline):
+    rows                 =    100000000
+    estimated_rows       =    100000000
+    index_count          =            4
+    snapshotted_at       = Tue Aug 11 2026 13:55:37 GMT+0530 (India Standard Time)
+
+==============================================================================================================
+  APPLYING MIGRATION 008: schema + constraints + indexes
+==============================================================================================================
+  Γ¥î Migration 008 failed: there is no unique constraint matching given keys for referenced table "cell_network_mapping"

@@ -1,0 +1,218 @@
+Γùç injected env (99) from .env // tip: Γùê secrets for agents [www.dotenvx.com]
+
+==============================================================================================================
+  SECTION 1: (lac,cisac) COLLISION CHECK ΓÇö 0.5% SAMPLE
+==============================================================================================================
+
+--- 0.5% sample: pair ΓåÆ #rows, #cities (state count via array length) ---
+[15921.8 ms] rows: 25
+--------------------------------------------------------------------------------------------------------------------
+lac      | cisac    | states   | cities   | sample_rows | states_list                                               
+--------------------------------------------------------------------------------------------------------------------
+045C     | 9C1F     | 7        | 7        | 7           | Andaman and Nicobar Islands,Arunachal Pradesh,Delhi,Har...
+0454     | 4F42     | 6        | 6        | 6           | Andaman and Nicobar Islands,Bihar,Gujarat,Madhya Prades...
+045B     | 9064     | 6        | 6        | 6           | Chandigarh,Delhi,Madhya Pradesh,Meghalaya,Odisha,Uttara...
+0454     | B790     | 6        | 6        | 6           | Goa,Rajasthan,Tamil Nadu,Tripura,Uttar Pradesh,Uttarakhand
+0451     | B701     | 6        | 6        | 6           | Delhi,Jammu and Kashmir,Madhya Pradesh,Punjab,Sikkim,Ut...
+0454     | B0D2     | 6        | 6        | 6           | Chandigarh,Chhattisgarh,Haryana,Jammu and Kashmir,Mahar...
+0457     | 4C0F     | 6        | 6        | 6           | Andaman and Nicobar Islands,Bihar,Jharkhand,Nagaland,Od...
+0459     | DE8E     | 6        | 6        | 6           | Andhra Pradesh,Karnataka,Madhya Pradesh,Meghalaya,Punja...
+0453     | BEB6     | 6        | 6        | 6           | Assam,Haryana,Kerala,Madhya Pradesh,Punjab,Tripura        
+045B     | 88A0     | 5        | 5        | 6           | Andaman and Nicobar Islands,Jharkhand,Ladakh,Maharashtr...
+0454     | 0BC3     | 5        | 5        | 5           | Jammu and Kashmir,Ladakh,Nagaland,Punjab,Rajasthan        
+0450     | 39EA     | 5        | 5        | 5           | Andaman and Nicobar Islands,Jharkhand,Meghalaya,Odisha,...
+0453     | EFAE     | 5        | 5        | 5           | Assam,Jharkhand,Kerala,Ladakh,Tripura                     
+0453     | F51B     | 5        | 5        | 5           | Arunachal Pradesh,Bihar,Gujarat,Kerala,Punjab             
+0454     | 3679     | 5        | 5        | 5           | Bihar,Himachal Pradesh,Karnataka,Tamil Nadu,West Bengal   
+0454     | C831     | 5        | 5        | 5           | Arunachal Pradesh,Assam,Gujarat,Jammu and Kashmir,Megha...
+0454     | FB5B     | 5        | 5        | 5           | Andaman and Nicobar Islands,Chandigarh,Delhi,Haryana,Ta...
+0454     | 7D63     | 5        | 5        | 5           | Andaman and Nicobar Islands,Bihar,Jammu and Kashmir,Lad...
+... (7 more rows)
+
+--- 0.5% sample pair summary ΓÇö how many pairs are cross-state? ---
+[12458.4 ms] rows: 1
+---------------------------------------------------------------------------
+total_pairs | single_state | two_states | over_two_states | pct_cross_state
+---------------------------------------------------------------------------
+406264      | 323600       | 71186      | 11478           | 20.35          
+
+==============================================================================================================
+  SECTION 2: SMOKING GUN ΓÇö 5 Delhi cells ΓåÆ (lac,cisac) ΓåÆ SUBSCRIBERS
+==============================================================================================================
+
+--- Pick 5 Delhi-area cells from cell_network_mapping (with Delhi coords) ---
+[128.2 ms] rows: 5
+--------------------------------------------------------
+cell_id  | lat       | lng       | geom_lat  | geom_lng 
+--------------------------------------------------------
+10000    | 28.650833 | 77.202150 | 28.650833 | 77.202150
+10001    | 28.648575 | 77.208840 | 28.648575 | 77.208840
+10005    | 28.628995 | 77.276669 | 28.628995 | 77.276669
+10006    | 28.690654 | 77.258271 | 28.690654 | 77.258271
+10007    | 28.619781 | 77.195679 | 28.619781 | 77.195679
+
+5 Delhi cell_ids selected (with Delhi lat/lng bbox): [ '10000', '10001', '10005', '10006', '10007' ]
+
+--- These Delhi cells ΓåÆ (lac,cisac) mappings ---
+[4.7 ms] rows: 15
+-----------------------------------------------------------------------------
+cell_id  | lac      | cisac    | lat      | lng      | source                
+-----------------------------------------------------------------------------
+10000    | 0454     | AAC0     | 28.6508  | 77.2022  | synthetic_test_mapping
+10000    | 045B     | 211D     | 28.6508  | 77.2022  | synthetic_test_mapping
+10000    | 0460     | 658C     | 28.6508  | 77.2022  | synthetic_test_mapping
+10001    | 045C     | 740A     | 28.6486  | 77.2088  | synthetic_test_mapping
+10001    | 0460     | 4A2B     | 28.6486  | 77.2088  | synthetic_test_mapping
+10001    | 0460     | FA3B     | 28.6486  | 77.2088  | synthetic_test_mapping
+10005    | 0454     | 5993     | 28.6290  | 77.2767  | synthetic_test_mapping
+10005    | 045A     | 9A5F     | 28.6290  | 77.2767  | synthetic_test_mapping
+10005    | 045C     | 548B     | 28.6290  | 77.2767  | synthetic_test_mapping
+10006    | 0455     | 3C5E     | 28.6907  | 77.2583  | synthetic_test_mapping
+10006    | 045B     | 0868     | 28.6907  | 77.2583  | synthetic_test_mapping
+10006    | 0460     | 1682     | 28.6907  | 77.2583  | synthetic_test_mapping
+10007    | 0458     | 69D7     | 28.6198  | 77.1957  | synthetic_test_mapping
+10007    | 045A     | EEBD     | 28.6198  | 77.1957  | synthetic_test_mapping
+10007    | 045C     | 194C     | 28.6198  | 77.1957  | synthetic_test_mapping
+
+--- CONCRETE PROOF: state distribution of SUBSCRIBERS reached via these 5 cells ---
+[513.1 ms] rows: 30
+-------------------------------------------------------------------
+state                       | cities   | subscribers | pct_of_total
+-------------------------------------------------------------------
+Jammu and Kashmir           | 2        | 61          | 4.66        
+Maharashtra                 | 2        | 58          | 4.43        
+Puducherry                  | 1        | 50          | 3.82        
+Nagaland                    | 1        | 48          | 3.66        
+Madhya Pradesh              | 1        | 46          | 3.51        
+Tripura                     | 1        | 43          | 3.28        
+Delhi                       | 1        | 43          | 3.28        
+Telangana                   | 1        | 43          | 3.28        
+Odisha                      | 1        | 42          | 3.21        
+Andaman and Nicobar Islands | 1        | 40          | 3.05        
+Chandigarh                  | 1        | 40          | 3.05        
+Uttarakhand                 | 1        | 39          | 2.98        
+West Bengal                 | 1        | 38          | 2.90        
+Ladakh                      | 1        | 38          | 2.90        
+Jharkhand                   | 1        | 37          | 2.82        
+Tamil Nadu                  | 1        | 36          | 2.75        
+Andhra Pradesh              | 1        | 36          | 2.75        
+Goa                         | 1        | 35          | 2.67        
+... (12 more rows)
+
+--- 20 LEAKAGE SAMPLES: non-Delhi/non-NCR subscribers (Tamil Nadu, Ladakh, etc.) ---
+[6.7 ms] rows: 20
+---------------------------------------------------------------------------------------------------------------------------------------------------------------
+state                       | city       | district      | lac      | cisac    | msisdn       | imsi            | operator | technology | latitude  | longitude
+---------------------------------------------------------------------------------------------------------------------------------------------------------------
+Andaman and Nicobar Islands | Port Blair | South Andaman | 045A     | EEBD     | 918964746124 | 404664261711580 | Airtel   | 5G         | 11.601700 | 92.743660
+Andaman and Nicobar Islands | Port Blair | South Andaman | 045A     | EEBD     | 919873666303 | 404664910295847 | Airtel   | 4G         | 11.622300 | 92.727621
+Andaman and Nicobar Islands | Port Blair | South Andaman | 045A     | 9A5F     | 918853841582 | 404752139657342 | Airtel   | 5G         | 11.619239 | 92.753479
+Andaman and Nicobar Islands | Port Blair | South Andaman | 045A     | 9A5F     | 919864823076 | 404754795979058 | Jio      | 5G         | 11.644693 | 92.759614
+Andaman and Nicobar Islands | Port Blair | South Andaman | 045A     | EEBD     | 919358616328 | 404752471931645 | Airtel   | 5G         | 11.654948 | 92.690344
+Andaman and Nicobar Islands | Port Blair | South Andaman | 045A     | EEBD     | 919438357301 | 404664157588663 | VI       | 4G         | 11.631786 | 92.691630
+Andaman and Nicobar Islands | Port Blair | South Andaman | 0458     | 69D7     | 918765848500 | 404621668791906 | VI       | 5G         | 11.656073 | 92.707169
+Andaman and Nicobar Islands | Port Blair | South Andaman | 0458     | 69D7     | 919340942255 | 404556202541088 | Airtel   | 5G         | 11.617001 | 92.759341
+Andaman and Nicobar Islands | Port Blair | South Andaman | 045A     | 9A5F     | 919264632265 | 404664484120812 | Jio      | 5G         | 11.643375 | 92.740901
+Andaman and Nicobar Islands | Port Blair | South Andaman | 0454     | AAC0     | 918989029778 | 404344114194879 | Jio      | 4G         | 11.606877 | 92.730683
+Andaman and Nicobar Islands | Port Blair | South Andaman | 0454     | 5993     | 919866717564 | 404752679198916 | Jio      | 5G         | 11.638213 | 92.760342
+Andaman and Nicobar Islands | Port Blair | South Andaman | 045A     | EEBD     | 919226894657 | 404664629271268 | VI       | 5G         | 11.610977 | 92.703212
+Andaman and Nicobar Islands | Port Blair | South Andaman | 0454     | 5993     | 918906893185 | 404664818710239 | Airtel   | 5G         | 11.662462 | 92.691342
+Andaman and Nicobar Islands | Port Blair | South Andaman | 0454     | 5993     | 919420341702 | 404344565079223 | BSNL     | 5G         | 11.641752 | 92.725853
+Andaman and Nicobar Islands | Port Blair | South Andaman | 0454     | 5993     | 918764979169 | 404664259194023 | Jio      | 4G         | 11.650030 | 92.758435
+Andaman and Nicobar Islands | Port Blair | South Andaman | 0455     | 3C5E     | 918934315312 | 404664145958064 | VI       | 5G         | 11.621005 | 92.756013
+Andaman and Nicobar Islands | Port Blair | South Andaman | 0454     | 5993     | 919929926545 | 404556895622537 | Jio      | 5G         | 11.585772 | 92.743234
+Andaman and Nicobar Islands | Port Blair | South Andaman | 0458     | 69D7     | 918932830963 | 404742255899660 | BSNL     | 5G         | 11.586746 | 92.686936
+... (2 more rows)
+
+--- SUMMARY METRICS: 5 Delhi cells ΓåÆ subscribers returned (with leakage quantified) ---
+[48.8 ms] rows: 1
+----------------------------------------------------------------------------------------------------------------------------------
+area_pairs_used | states_reached | cities_reached | total_subscribers | delhi_subscribers | non_ncr_leakage | leakage_states_count
+----------------------------------------------------------------------------------------------------------------------------------
+15              | 35             | 37             | 1310              | 43                | 1202            | 32                  
+
+==============================================================================================================
+  SECTION 3: cell_towers / sim_cell_towers DATA QUALITY
+==============================================================================================================
+
+--- cell_towers: operator / state distribution ---
+[749.2 ms] rows: 1
+--------------------------------
+total_towers | inside_delhi_bbox
+--------------------------------
+50000        | 48721            
+
+--- sim_cell_towers ΓÇö state + operator distribution (50K sample towers) ---
+[278.4 ms] rows: 25
+------------------------------------------------------
+state    | operator_short_name | technology | n       
+------------------------------------------------------
+DELHI    | JIO                 | LTE        | 3633    
+DELHI    | AIRTEL              | LTE        | 3350    
+DELHI    | VI                  | LTE        | 2581    
+DELHI    | JIO                 | GSM        | 1833    
+DELHI    | JIO                 | UMTS       | 1801    
+DELHI    | JIO                 | NR5G       | 1753    
+DELHI    | AIRTEL              | UMTS       | 1715    
+DELHI    | AIRTEL              | NR5G       | 1623    
+DELHI    | AIRTEL              | GSM        | 1610    
+DELHI    | VI                  | NR5G       | 1342    
+DELHI    | VI                  | GSM        | 1276    
+DELHI    | VI                  | UMTS       | 1247    
+DELHI    | MTNL                | LTE        | 1206    
+DELHI    | BSNL                | LTE        | 1162    
+DELHI    | BSNL                | NR5G       | 635     
+DELHI    | BSNL                | UMTS       | 626     
+DELHI    | BSNL                | GSM        | 605     
+DELHI    | MTNL                | NR5G       | 592     
+... (7 more rows)
+
+--- sim_cell_towers ΓÇö Delhi-district-level distribution (top 20) ---
+[94.5 ms] rows: 15
+------------------------------------------------------------------------------
+district      | city          | state         | n        | avg_lat  | avg_lng 
+------------------------------------------------------------------------------
+NOIDA         | NOIDA         | UTTAR PRADESH | 4645     | 28.5354  | 77.3917 
+NEW DELHI     | NEW DELHI     | DELHI         | 4621     | 28.6144  | 77.2095 
+GURUGRAM      | GURUGRAM      | HARYANA       | 4617     | 28.4599  | 77.0261 
+SOUTH DELHI   | DELHI         | DELHI         | 4129     | 28.5701  | 77.1805 
+CENTRAL DELHI | DELHI         | DELHI         | 3785     | 28.6405  | 77.2153 
+GHAZIABAD     | GHAZIABAD     | UTTAR PRADESH | 3221     | 28.6688  | 77.4542 
+FARIDABAD     | FARIDABAD     | HARYANA       | 3203     | 28.4090  | 77.3181 
+NORTH DELHI   | DELHI         | DELHI         | 3186     | 28.6892  | 77.2057 
+WEST DELHI    | DELHI         | DELHI         | 3175     | 28.6701  | 77.1101 
+EAST DELHI    | DELHI         | DELHI         | 3070     | 28.6193  | 77.2899 
+DWARKA        | DELHI         | DELHI         | 2750     | 28.5893  | 77.0307 
+ROHINI        | DELHI         | DELHI         | 2750     | 28.7199  | 77.0702 
+GREATER NOIDA | GREATER NOIDA | UTTAR PRADESH | 2734     | 28.4738  | 77.5040 
+SHAHDARA      | DELHI         | DELHI         | 2261     | 28.6702  | 77.2805 
+GHAZIABAD     | VAISHALI      | UTTAR PRADESH | 1853     | 28.6498  | 77.3381 
+
+==============================================================================================================
+  SECTION 4: APPROXIMATE DELHI COUNT
+==============================================================================================================
+
+--- Delhi subscriber count ΓÇö COUNT with (lac,cisac) index (if Delhi uses specific lacs) ---
+Diagnostic FAILED: error: canceling statement due to statement timeout
+    at C:\Users\91958\OneDrive\Desktop\TURANT\node_modules\pg\lib\client.js:652:17
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async runQuery (C:\Users\91958\OneDrive\Desktop\TURANT\scripts\diagnostic-phase1-smoking-gun.ts:15:15)
+    at async main (C:\Users\91958\OneDrive\Desktop\TURANT\scripts\diagnostic-phase1-smoking-gun.ts:229:3) {
+  length: 109,
+  severity: 'ERROR',
+  code: '57014',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'postgres.c',
+  line: '3446',
+  routine: 'ProcessInterrupts'
+}

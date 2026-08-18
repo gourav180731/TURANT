@@ -1,0 +1,102 @@
+Γùç injected env (99) from .env // tip: Γîü auth for agents [www.vestauth.com]
+
+==============================================================================================================
+  SECTION 1: EXACT CARDINALITY
+==============================================================================================================
+
+--- Exact row counts ---
+[17763.2 ms] rows: 6
+-----------------------------------
+tbl                     | n        
+-----------------------------------
+subscriber_dump         | 100000000
+cell_network_mapping    | 150000   
+cell_subscriber_mapping | 50000    
+cell_towers             | 50000    
+sim_cell_towers         | 50000    
+telecom_master          | 5        
+
+==============================================================================================================
+  SECTION 2: 0.5% SAMPLE ΓÇö STATE/OPERATOR/TECH DISTRIBUTION
+==============================================================================================================
+
+--- State distribution (0.5% sample) ---
+[7712.7 ms] rows: 30
+--------------------------------------------------------------------
+state                       | sample_rows | pct_of_sample | cities  
+--------------------------------------------------------------------
+Maharashtra                 | 26265       | 5.425         | 2       
+Jammu and Kashmir           | 26159       | 5.403         | 2       
+Andhra Pradesh              | 13439       | 2.776         | 1       
+Kerala                      | 13272       | 2.741         | 1       
+Gujarat                     | 13265       | 2.740         | 1       
+Chhattisgarh                | 13243       | 2.735         | 1       
+Assam                       | 13234       | 2.733         | 1       
+Tamil Nadu                  | 13217       | 2.730         | 1       
+Sikkim                      | 13213       | 2.729         | 1       
+Punjab                      | 13206       | 2.727         | 1       
+Mizoram                     | 13144       | 2.715         | 1       
+Nagaland                    | 13135       | 2.713         | 1       
+Odisha                      | 13135       | 2.713         | 1       
+Uttar Pradesh               | 13115       | 2.709         | 1       
+West Bengal                 | 13114       | 2.708         | 1       
+Goa                         | 13091       | 2.704         | 1       
+Haryana                     | 13082       | 2.702         | 1       
+Delhi                       | 13082       | 2.702         | 1       
+... (12 more rows)
+
+--- Delhi sample count ΓÇö 0.5% ---
+[8483.2 ms] rows: 1
+-------------------------------------------------------------------------------
+sample_size | delhi_rows | delhi_pct_sample | distinct_states | distinct_cities
+-------------------------------------------------------------------------------
+496894      | 13580      | 2.733            | 35              | 37             
+
+--- Operator distribution ΓÇö 0.5% sample ---
+[5470.2 ms] rows: 5
+------------------------------
+operator | n        | pct     
+------------------------------
+Jio      | 179128   | 36.00   
+Airtel   | 179109   | 35.99   
+VI       | 74864    | 15.05   
+BSNL     | 39537    | 7.95    
+MTNL     | 24958    | 5.02    
+
+--- Technology distribution ΓÇö 0.5% sample ---
+[5580.0 ms] rows: 3
+--------------------------------
+technology | n        | pct     
+--------------------------------
+5G         | 254678   | 50.02   
+4G         | 203423   | 39.96   
+UMTS       | 51023    | 10.02   
+
+==============================================================================================================
+  SECTION 3: ROOT CAUSE ΓÇö (lac,cisac) ARE NOT GEOGRAPHICALLY UNIQUE
+==============================================================================================================
+
+--- Distinct (lac,cisac) pairs vs states/cities ΓÇö 5% sample ---
+Diagnostic FAILED: error: canceling statement due to statement timeout
+    at C:\Users\91958\OneDrive\Desktop\TURANT\node_modules\pg\lib\client.js:652:17
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async runQuery (C:\Users\91958\OneDrive\Desktop\TURANT\scripts\diagnostic-phase1-collisions.ts:15:15)
+    at async main (C:\Users\91958\OneDrive\Desktop\TURANT\scripts\diagnostic-phase1-collisions.ts:108:3) {
+  length: 109,
+  severity: 'ERROR',
+  code: '57014',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'postgres.c',
+  line: '3446',
+  routine: 'ProcessInterrupts'
+}

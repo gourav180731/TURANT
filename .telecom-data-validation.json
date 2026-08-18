@@ -1,0 +1,51 @@
+{
+  "generatedAt": "2026-08-13T04:32:10.911Z",
+  "results": [
+    {
+      "name": "operator dump present (any source)",
+      "pass": true,
+      "detail": "{\"total\":\"191547362\"}"
+    },
+    {
+      "name": "Delhi total = exactly 100,000,000 rows",
+      "pass": true,
+      "detail": "count=100000000"
+    },
+    {
+      "name": "FK fk_subdump_serving_cell VALIDATED — zero orphans",
+      "pass": true,
+      "detail": "{\"orphans\":\"0\"}"
+    },
+    {
+      "name": "duplicate IMSI = 0 (mapped expansion)",
+      "pass": true,
+      "detail": "{\"dup_imsi\":\"0\",\"total\":\"97457009\"}"
+    },
+    {
+      "name": "duplicate MSISDN = 0 (mapped expansion)",
+      "pass": true,
+      "detail": "{\"dup_msisdn\":\"0\"}"
+    },
+    {
+      "name": "expansion geometry: POINT inside Delhi (0 bad)",
+      "pass": true,
+      "detail": "{\"bad\":\"0\"}"
+    },
+    {
+      "name": "every expansion serving cell is an authoritative tower cell",
+      "pass": true,
+      "detail": "cells=29727"
+    },
+    {
+      "name": "cell mapping completeness (mapped vs unmapped Delhi)",
+      "pass": true,
+      "detail": "mapped=97457009 unmapped=2542991 (expansion only 2542991 legacy-Delhi)"
+    },
+    {
+      "name": "LAC/CISAC collision audit (shared radius — not leakage)",
+      "pass": true,
+      "detail": "pairs=3382 cells=118547"
+    }
+  ],
+  "pass": true
+}

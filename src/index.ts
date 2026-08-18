@@ -34,6 +34,7 @@ const logger = getLogger();
 
 export const app = express();
 app.disable('x-powered-by');
+app.use(express.json());
 
 app.get('/healthz', async (_req: Request, res: Response) => {
   const db = cfg.DATABASE_URL ? await pingPool() : { ok: true, detail: 'not_configured' };
@@ -147,22 +148,29 @@ if (cfg.USE_DUMMY_SUBSCRIBER_DB) {
  */
 async function startServer(): Promise<void> {
   // The real C-DOT subscriber-dump matcher. Three modes:
-  //   bridge (default) : full-relational cell → (lac,cisac) → indexed dump join
-  //                      (Phase 4/5 — the production architecture).
-  //   cell-indexed     : legacy `cell_id = ANY($1)` (only valid if the dump
-  //                      actually carries a cell_id column).
-  //   polygon          : point-in-polygon against the dump geom column.
+  //   cell-indexed (default): `serving_cell_id = ANY($1)` index seek on the
+  //                      FK-bound cell column (migrations 005/008) — the
+  //                      production path for the cell-bound Delhi dump.
+  //   polygon         : point-in-polygon against the dump geom column.
+  //   bridge (legacy) : cell → (lac,cisac) → indexed dump join (Phase 4/5
+  //                      architecture; kept for dumps without serving_cell_id).
   if (cfg.SUBSCRIBER_DUMP_TABLE !== '' && cfg.DATABASE_URL) {
     const mode = cfg.SUBSCRIBER_DUMP_LOOKUP_MODE;
-    registerSubscriberMatcher(
+    const matcher =
       mode === 'polygon'
         ? new PostgresSubscriberDumpMatcher(cfg)
         : mode === 'cell-indexed'
           ? new PostgresSubscriberCellMatcher(cfg)
-          : new CellSubscriberBridgeMatcher(cfg),
-    );
+          : new CellSubscriberBridgeMatcher(cfg);
+    registerSubscriberMatcher(matcher);
     logger.info({ table: cfg.SUBSCRIBER_DUMP_TABLE, mode }, 'subscriber.dump.matcher.registered');
-    app.use('/api/v1', createSubscriberBenchmarkRoutes(new CellSubscriberBridgeMatcher(cfg)));
+    // Benchmark endpoint needs the cell-set stats shape; polygon mode has no
+    // cell-set contract, so point the harness at the legacy bridge matcher.
+    const benchmarkMatcher =
+      matcher instanceof PostgresSubscriberDumpMatcher
+        ? new CellSubscriberBridgeMatcher(cfg)
+        : matcher;
+    app.use('/api/v1', createSubscriberBenchmarkRoutes(benchmarkMatcher));
   }
 
   if (cfg.USE_DUMMY_SUBSCRIBER_DB) {

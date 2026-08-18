@@ -95,25 +95,76 @@ export const envSchema = z.object({
   SUBSCRIBER_DUMP_MSISDN_COL: strFromEnv('msisdn'),
   SUBSCRIBER_DUMP_GEOM_COL: strFromEnv('geom'),
   /**
-   * B-tree indexed cell column on the dump (migration 005 adds it and backfills
-   * it from the nearest `telecom_master` cell). The two-stage path joins the
-   * polygon-resolved tower cell_ids against this column with an index seek —
-   * never a scan over the whole dump.
+   * Cell column on the dump bound to `sim_cell_towers.cell_id` via the FK
+   * `fk_subdump_serving_cell` (migration 008). The 97.5M Delhi expansion rows
+   * carry a real value here, so the `cell-indexed` path is an index seek on
+   * `serving_cell_id = ANY($1)` — never a scan over the whole dump.
    */
-  SUBSCRIBER_DUMP_CELL_COL: strFromEnv('cell_id'),
+  SUBSCRIBER_DUMP_CELL_COL: strFromEnv('serving_cell_id'),
   /**
    * How the real dump is matched at scale:
-   *   bridge (default)  : full-relational cell → (lac,cisac) → indexed
-   *                        subscriber_dump JOIN via cell_network_mapping
-   *                        (Phase 4/5 — the production architecture).
-   *   cell-indexed      : legacy `cell_id = ANY($1)` against a B-tree cell_id
-   *                        column (only valid if the dump actually has one).
-   *   polygon           : point-in-polygon against the GiST `geom` column
-   *                        (the older direct path; can be slow on big zones).
+   *   cell-indexed (default): `serving_cell_id = ANY($1)` index seek on the
+   *                            FK-bound cell column (migrations 005/008).
+   *   polygon                : point-in-polygon against the GiST `geom` column.
+   *   bridge (legacy)        : cell → (lac,cisac) → subscriber_dump JOIN via
+   *                            cell_network_mapping (Phase 4/5 architecture;
+   *                            kept for deployments without serving_cell_id).
    */
-  SUBSCRIBER_DUMP_LOOKUP_MODE: z.enum(['bridge', 'cell-indexed', 'polygon']).default('bridge'),
-  /** Safety cap on matched subscribers per lookup. */
-  SUBSCRIBER_DUMP_MATCH_LIMIT: intFromEnvNonZero(100_000),
+  SUBSCRIBER_DUMP_LOOKUP_MODE: z.enum(['bridge', 'cell-indexed', 'polygon']).default('cell-indexed'),
+  /**
+   * Safety cap on matched subscribers per lookup for the polygon / cell-indexed
+   * path that materialises the full MSISDN list in Node RAM.
+   *
+   * IMPORTANT — NO-FABRICATION RULE:
+   *   For the benchmark and production pipeline (benchmark-routes, subscriber-cell-matcher
+   *   statsQuery) the LIMIT is intentionally NOT applied to the COUNT(*) / COUNT(DISTINCT)
+   *   aggregates: they always return the real DB-derived total regardless of this cap.
+   *   This cap only gates the MSISDN list materialisation path (used when the pipeline
+   *   needs to hand a recipient list to the SMPP boundary).
+   *
+   *   For a 100M Delhi dataset across 50K cells the true unique subscriber count can be
+   *   20M+ — setting this to 100_000 would fabricate the recipient list. Set it high
+   *   enough that the materialisation path is never silently truncated in production.
+   *   The benchmark stats query (matchCells) uses COUNT() directly and is never capped.
+   *
+   * PERFORMANCE NOTE: This limit should be removed or set extremely high. The benchmark/
+   * stats path already bypasses it (uses COUNT()). For production SMPP hand-off, use
+   * cursor-based streaming (CellSubscriberBridgeMatcher.streamRecipients) instead of
+   * materialized lists, making this limit obsolete.
+   *
+   * Default: 100,000,000 (100M) — matches max dataset size; effectively no limit.
+   *   Override via SUBSCRIBER_DUMP_MATCH_LIMIT env var.
+   */
+  SUBSCRIBER_DUMP_MATCH_LIMIT: intFromEnvNonZero(100_000_000),
+
+  // ---- Cell → subscriber access path (Phase-4/5 optimization, migration 010) --
+  // Precomputed, DB-derived access structures keep recipient *identification*
+  // off the 78 GB heap: identification reads NUMERIC subscriber ids only, then
+  // MSISDNs are materialised per batch through the dump's `id` PK. Every number
+  // below is counted from existing authoritative data — nothing is fabricated,
+  // nothing is generated from geography independently.
+  /**
+   * Which access path the cell-indexed matcher uses for identification:
+   *   mapping (default): `subscriber_cell_index` (serving_cell_id, subscriber_id)
+   *                      PK table, CLUSTERed per cell — compact int4 postings.
+   *   index             : covering B-tree on the dump (serving_cell_id) INCLUDE (id)
+   *                      (VERSION B — no new table, larger index).
+   *   postings          : `cell_postings(cell_id, ids int[])` + intarray union
+   *                      (VERSION D — evaluated, requires intarray ext).
+   * The measured winner (benchmark:subscriber-matching tier table) becomes the
+   * production default. Counts always come from `cell_subscriber_stats`.
+   */
+  SUBSCRIBER_CELL_ACCESS_MODE: z.enum(['mapping', 'index', 'postings', 'direct']).default('mapping'),
+  /** `subscriber_cell_index` — (serving_cell_id, subscriber_id) PK, one row per mapped subscriber. */
+  SUBSCRIBER_CELL_INDEX_TABLE: strFromEnv('subscriber_cell_index'),
+  /** `cell_subscriber_stats` — per-cell COUNT(*) derived from the dump. */
+  CELL_SUBSCRIBER_STATS_TABLE: strFromEnv('cell_subscriber_stats'),
+  /** `cell_postings` — per-cell int4[] of subscriber ids (intarray VERSION D). */
+  CELL_POSTINGS_TABLE: strFromEnv('cell_postings'),
+  /** Dump PK ordinal used as the numeric subscriber id (guaranteed < 2^31). */
+  SUBSCRIBER_DUMP_ID_COL: strFromEnv('id'),
+  /** Streaming batch for recipient draining from the cursor (Phase 8). */
+  CELL_STREAM_BATCH_SIZE: intFromEnvNonZero(50_000),
 
   // ---- Cell -> LAC/CISAC bridge (Phase 2/4/5) ------------------------------
   // The production lookup does NOT scan the 100M dump by a fabricated cell_id.

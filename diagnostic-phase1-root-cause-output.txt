@@ -1,0 +1,37 @@
+Γùç injected env (99) from .env // tip: Γùê secrets for agents [www.dotenvx.com]
+
+====================================================================================================
+  SECTION 1: subscriber_dump ΓÇö BASIC CARDINALITY
+====================================================================================================
+
+--- Total subscriber_dump rows (relies on visibility, no full scan) ---
+[16.8 ms] rows: 1
+----------------------
+approx_rows | relpages
+----------------------
+100000000   | 4012960 
+
+--- Delhi vs non-Delhi counts ΓÇö small tables only, sampling ---
+Diagnostic FAILED: error: column "cell_id" does not exist
+    at C:\Users\91958\OneDrive\Desktop\TURANT\node_modules\pg\lib\client.js:652:17
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async runQuery (C:\Users\91958\OneDrive\Desktop\TURANT\scripts\diagnostic-phase1-root-cause.ts:15:15)
+    at async main (C:\Users\91958\OneDrive\Desktop\TURANT\scripts\diagnostic-phase1-root-cause.ts:61:3) {
+  length: 108,
+  severity: 'ERROR',
+  code: '42703',
+  detail: undefined,
+  hint: undefined,
+  position: '103',
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'parse_relation.c',
+  line: '3827',
+  routine: 'errorMissingColumn'
+}

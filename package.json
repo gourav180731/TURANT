@@ -15,7 +15,13 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "seed": "tsx scripts/seed-telecom.ts",
-    "seed:telecom-master": "tsx scripts/seed-telecom-master.ts"
+    "seed:telecom-master": "tsx scripts/seed-telecom-master.ts",
+    "benchmark:subscriber-matching": "tsx scripts/benchmark-subscriber-matching.ts",
+    "benchmark:brute-force": "tsx scripts/brute-force-validation.ts",
+    "benchmark:cell-access": "tsx scripts/benchmark-cell-access.ts",
+    "build:cell-access": "tsx scripts/build-cell-subscriber-access.ts",
+    "validate:telecom-data": "tsx scripts/validate-telecom-data.ts",
+    "profile:matching": "tsx scripts/profile-subscriber-matching.ts"
   },
   "keywords": [
     "cap",

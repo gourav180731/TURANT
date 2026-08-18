@@ -1,9 +1,13 @@
 import express, { Router, type Request, type Response } from 'express';
 import { loadConfig } from '../config/env.js';
+import { PostgresSubscriberCellMatcher } from '../telecom/matcher/subscriber-cell-matcher.js';
 import { CellSubscriberBridgeMatcher } from '../telecom/matcher/cell-subscriber-bridge-matcher.js';
 import { getLogger } from '../utils/logger.js';
 
 const logger = getLogger();
+
+/** Any dump matcher that can report the benchmark stats shape. */
+export type CellMatchMatcher = PostgresSubscriberCellMatcher | CellSubscriberBridgeMatcher;
 
 /**
  * 50,000-cell benchmark endpoint (Phase 7/5/13 acceptance harness).
@@ -11,15 +15,16 @@ const logger = getLogger();
  *   POST /api/v1/benchmark/subscribers/lookup
  *   Body: { "cellIds": ["10000","10001", ...] }   (up to 50,000)
  *
- * Validates + dedupes the input, then runs the identical relational bridge the
- * production pipeline uses: stage temp table → cell→(lac,cisac) mapping →
- * (lac,cisaco) indexed join into the 100M subscriber_dump → DISTINCT msisdn.
+ * Validates + dedupes the input, then runs the identical lookup the production
+ * pipeline uses. With the default `cell-indexed` mode that is
+ * `serving_cell_id = ANY($1)` against the FK-bound cell column; with the
+ * legacy `bridge` mode it is the cell → (lac,cisac) → indexed dump join.
  * Returns real statistics, never materialising the recipient list in Node.
  *
  * This is the acceptance harness for Test A (100) / B (1k) / C (10k) / D (50k).
  */
 export function createSubscriberBenchmarkRoutes(
-  matcher: CellSubscriberBridgeMatcher = new CellSubscriberBridgeMatcher(loadConfig()),
+  matcher: CellMatchMatcher = defaultCellMatchMatcher(),
 ): Router {
   const router = Router();
   const jsonBody = express.json({ limit: '2mb' });
@@ -64,4 +69,16 @@ export function createSubscriberBenchmarkRoutes(
   });
 
   return router;
+}
+
+/**
+ * Default benchmark matcher for the active lookup mode. `cell-indexed`
+ * (production default) and `bridge` (legacy) both expose the matchCells shape;
+ * `polygon` mode has no cell-set contract, so fall back to the legacy bridge.
+ */
+function defaultCellMatchMatcher(): CellMatchMatcher {
+  const cfg = loadConfig();
+  return cfg.SUBSCRIBER_DUMP_LOOKUP_MODE === 'cell-indexed'
+    ? new PostgresSubscriberCellMatcher(cfg)
+    : new CellSubscriberBridgeMatcher(cfg);
 }

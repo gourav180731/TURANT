@@ -132,10 +132,10 @@ export class TelecomSimulator {
     }
 
     // Real-data path: when the C-DOT dump is wired AND the subscriber store is
-    // Postgres, match subscribers against the dump. Default is the full-
-    // relational bridge (polygon → cells → (lac,cisac) → indexed dump JOIN).
-    // `bridge`      : cell_network_mapping → (lac,cisac) composite index JOIN.
-    // `cell-indexed`: legacy `cell_id = ANY($1)` (dump must carry cell_id).
+    // Postgres, match subscribers against the dump. Default is the indexed
+    // `serving_cell_id = ANY($1)` path on the FK-bound cell column.
+    // `cell-indexed`: serving_cell_id = ANY($1) index seek (default).
+    // `bridge`      : legacy cell → (lac,cisac) → dump JOIN via mapping.
     // `polygon`     : point-in-polygon against the dump geom column.
     // Memory mode has no database, so it always uses the sim matcher.
     const useDumpMatcher = cfg.SUBSCRIBER_DB_MODE === 'postgres' && cfg.SUBSCRIBER_DUMP_TABLE !== '';
