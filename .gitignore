@@ -9,6 +9,16 @@ target/
 mvnw
 mvnw.cmd
 
+# Backend Node.js (old TypeScript backend - migrated to Java)
+scripts/
+tests/
+dist/
+node_modules/
+package.json
+package-lock.json
+tsconfig.json
+tsconfig.build.json
+
 # Dependencies
 node_modules/
 
@@ -16,6 +26,7 @@ node_modules/
 dist/
 coverage/
 build/
+docs/
 
 # Environment — NEVER commit real credentials
 .env
@@ -27,6 +38,9 @@ logs/
 *.log
 audit/
 *.log.*
+diagnostic-*.txt
+apply-migration-*.txt
+*.ps1
 
 # OS / editor
 .DS_Store
@@ -43,3 +57,17 @@ test-output/
 # Frontend build
 frontend/dist/
 frontend/node_modules/
+
+# Benchmark and diagnostic files
+.benchmark*.json
+.benchmark*.md
+.brute-force*.json
+.brute-force*.md
+.telecom-data*.json
+.telecom-data*.md
+.verify-correctness*.json
+.verify-correctness*.md
+.explain-*.md
+.diag-*.log
+.diag-*.err
+*.log
