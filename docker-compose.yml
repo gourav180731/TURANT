@@ -1,0 +1,139 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgis/postgis:16-3.4-alpine
+    container_name: turant-postgres
+    environment:
+      POSTGRES_DB: turant
+      POSTGRES_USER: turant
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-turant_dev_password}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U turant"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - turant-network
+    restart: unless-stopped
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: turant-redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-turant_redis_password}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - turant-network
+    restart: unless-stopped
+
+  # Backend Application
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: turant-backend
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-production}
+      
+      # Database
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/turant
+      SPRING_DATASOURCE_USERNAME: turant
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-turant_dev_password}
+      
+      # Redis
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PORT: 6379
+      SPRING_REDIS_PASSWORD: ${REDIS_PASSWORD:-turant_redis_password}
+      
+      # SMPP (optional - configure for production)
+      TURANT_SMPP_HOST: ${SMPP_HOST:-}
+      TURANT_SMPP_PORT: ${SMPP_PORT:-2775}
+      TURANT_SMPP_SYSTEM_ID: ${SMPP_SYSTEM_ID:-}
+      TURANT_SMPP_PASSWORD: ${SMPP_PASSWORD:-}
+      
+      # Simulation mode (disable in production with real SMPP)
+      SIMULATION_MODE: ${SIMULATION_MODE:-enabled}
+      
+      # JVM options
+      JAVA_OPTS: -Xmx1g -Xms512m -XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - turant-network
+    restart: unless-stopped
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+
+  # Frontend Application
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: turant-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks:
+      - turant-network
+    restart: unless-stopped
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  turant-network:
+    driver: bridge

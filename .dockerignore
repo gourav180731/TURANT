@@ -1,0 +1,67 @@
+# Maven
+target/
+!target/turant-*.jar
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.settings/
+.classpath
+.project
+.factorypath
+
+# Build artifacts
+dist/
+build/
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+*.md
+!README.md
+docs/
+
+# Test reports
+.benchmark*.json
+.benchmark*.md
+.brute-force*.json
+.brute-force*.md
+.telecom-data*.json
+.telecom-data*.md
+.verify-correctness*.json
+.verify-correctness*.md
+*.err
+diagnostic-*.txt
+
+# Node modules (for backend)
+node_modules/
+
+# Frontend (exclude from backend build)
+frontend/

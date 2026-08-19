@@ -1,9 +1,21 @@
+# Java / Maven
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.iml
+.mvn/
+mvnw
+mvnw.cmd
+
 # Dependencies
 node_modules/
 
 # Build output
 dist/
 coverage/
+build/
 
 # Environment — NEVER commit real credentials
 .env
@@ -14,6 +26,7 @@ coverage/
 logs/
 *.log
 audit/
+*.log.*
 
 # OS / editor
 .DS_Store
@@ -21,3 +34,12 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+*.tmp
+
+# Test output
+test-output/
+*.tmp
+
+# Frontend build
+frontend/dist/
+frontend/node_modules/
