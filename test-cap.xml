@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<alert xmlns="urn:oasis:names:tc:emergency:cap:1.2">
+  <identifier>test-alert-123</identifier>
+  <sender>test@example.com</sender>
+  <sent>2026-08-20T10:00:00Z</sent>
+  <status>Actual</status>
+  <msgType>Alert</msgType>
+  <scope>Public</scope>
+  <info>
+    <language>en-US</language>
+    <category>Safety</category>
+    <event>Test Emergency Alert</event>
+    <urgency>Immediate</urgency>
+    <severity>Extreme</severity>
+    <certainty>Observed</certainty>
+    <effective>2026-08-20T10:00:00Z</effective>
+    <expires>2026-08-20T12:00:00Z</expires>
+    <senderName>TURANT Test System</senderName>
+    <headline>Test Heat Wave Alert</headline>
+    <description>This is a test alert for the TURANT system</description>
+    <instruction>This is only a test. No action required.</instruction>
+    <area>
+      <areaDesc>Test Zone</areaDesc>
+      <polygon>28.6,77.2 28.7,77.2 28.7,77.3 28.6,77.3 28.6,77.2</polygon>
+    </area>
+  </info>
+</alert>

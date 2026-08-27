@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<alert xmlns="urn:oasis:names:tc:emergency:cap:1.2">
+  <identifier>chennai-cyclone-789</identifier>
+  <sender>Tamil Nadu SDMA</sender>
+  <sent>2026-08-21T05:00:00Z</sent>
+  <status>Actual</status>
+  <msgType>Alert</msgType>
+  <scope>Public</scope>
+  <info>
+    <language>en-IN</language>
+    <category>Met</category>
+    <event>Cyclone Warning</event>
+    <urgency>Immediate</urgency>
+    <severity>Extreme</severity>
+    <certainty>Likely</certainty>
+    <effective>2026-08-21T05:00:00Z</effective>
+    <expires>2026-08-22T05:00:00Z</expires>
+    <senderName>Tamil Nadu Disaster Management</senderName>
+    <headline>Severe Cyclone Warning - Chennai and Surrounding Districts</headline>
+    <description>Severe cyclonic storm approaching Tamil Nadu coast. Very heavy rainfall and strong winds expected in Chennai, Kanchipuram, and Tiruvallur districts.</description>
+    <instruction>Evacuate low-lying coastal areas immediately. Move to cyclone shelters. Emergency helpline: 1070</instruction>
+    <area>
+      <areaDesc>Chennai City, Kanchipuram, Tiruvallur</areaDesc>
+      <polygon>13.0827,80.2707 13.1000,80.2800 13.1200,80.2900 13.1000,80.3000 13.0827,80.2707</polygon>
+    </area>
+  </info>
+</alert>

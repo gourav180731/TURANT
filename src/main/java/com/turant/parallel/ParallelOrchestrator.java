@@ -33,13 +33,13 @@ public class ParallelOrchestrator {
     
     private static final Logger logger = LoggerFactory.getLogger(ParallelOrchestrator.class);
     
-    @Value("${parallel.worker-count:4}")
+    @Value("${turant.parallel.worker-count:4}")
     private int workerCount;
     
-    @Value("${parallel.execution-mode:threads}")
+    @Value("${turant.parallel.execution-mode:threads}")
     private String executionMode;
     
-    @Value("${submit.batch-size:500}")
+    @Value("${turant.parallel.submit-batch-size:500}")
     private int maxBatchSize;
     
     private final ExecutorService executorService;

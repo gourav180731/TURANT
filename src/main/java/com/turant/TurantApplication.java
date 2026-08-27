@@ -2,6 +2,7 @@ package com.turant;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
@@ -20,8 +21,11 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  * - Parallel worker execution
  * - Telecom simulation
  * - t0-t5 latency tracing
+ * 
+ * NOTE: DataSourceAutoConfiguration is excluded to allow simulation mode
+ * without PostgreSQL. DatabaseConfig manually creates DataSource when configured.
  */
-@SpringBootApplication
+@SpringBootApplication(exclude = {DataSourceAutoConfiguration.class})
 @EnableAsync
 @EnableScheduling
 public class TurantApplication {

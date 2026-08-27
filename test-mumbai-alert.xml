@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<alert xmlns="urn:oasis:names:tc:emergency:cap:1.2">
+  <identifier>mumbai-flood-001</identifier>
+  <sender>Mumbai NDMA</sender>
+  <sent>2026-08-20T12:00:00Z</sent>
+  <status>Actual</status>
+  <msgType>Alert</msgType>
+  <scope>Public</scope>
+  <info>
+    <language>en-IN</language>
+    <category>Met</category>
+    <event>Heavy Rainfall Alert</event>
+    <urgency>Immediate</urgency>
+    <severity>Extreme</severity>
+    <certainty>Observed</certainty>
+    <effective>2026-08-20T12:00:00Z</effective>
+    <expires>2026-08-20T18:00:00Z</expires>
+    <senderName>Mumbai Disaster Management</senderName>
+    <headline>Heavy Rainfall Alert - Mumbai City</headline>
+    <description>Heavy to very heavy rainfall expected in Mumbai. Waterlogging likely in low-lying areas.</description>
+    <instruction>Stay indoors. Avoid waterlogged areas. Emergency helpline: 108</instruction>
+    <area>
+      <areaDesc>Mumbai City - South Mumbai, Bandra, Andheri</areaDesc>
+      <polygon>19.0760,72.8777 19.0820,72.8800 19.0850,72.8850 19.0800,72.8900 19.0760,72.8777</polygon>
+    </area>
+  </info>
+</alert>

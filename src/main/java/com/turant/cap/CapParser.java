@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.w3c.dom.*;
 import javax.xml.parsers.*;
+import javax.xml.XMLConstants;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -17,6 +18,11 @@ import java.util.*;
  * 
  * Parses CAP 1.2 (ITU-T X.1303 / OASIS CAP v1.2) XML documents into CapAlert.
  * Preserves exact validation and normalization behavior from the TypeScript implementation.
+ * 
+ * SECURITY:
+ * - XXE protection enabled (DTD and external entities disabled)
+ * - Namespace aware parsing
+ * - Input validation and sanitization
  */
 @Component
 public class CapParser {
@@ -28,6 +34,34 @@ public class CapParser {
     public CapParser() {
         this.documentBuilderFactory = DocumentBuilderFactory.newInstance();
         this.documentBuilderFactory.setNamespaceAware(true);
+        
+        // XXE Protection: Disable DTD and external entities
+        try {
+            // Disable DTD processing
+            documentBuilderFactory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            
+            // Disable external entities
+            documentBuilderFactory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            documentBuilderFactory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            
+            // Disable external DTD
+            documentBuilderFactory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+            
+            // Enable secure processing
+            documentBuilderFactory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            
+            // Disable XInclude
+            documentBuilderFactory.setXIncludeAware(false);
+            
+            // Disable expand entity references
+            documentBuilderFactory.setExpandEntityReferences(false);
+            
+            logger.info("CAP XML parser initialized with XXE protection");
+            
+        } catch (ParserConfigurationException e) {
+            logger.error("Failed to configure XXE protection - parser may be vulnerable!", e);
+            throw new RuntimeException("Failed to configure secure XML parser", e);
+        }
     }
     
     /**

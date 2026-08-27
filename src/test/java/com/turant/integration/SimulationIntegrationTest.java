@@ -59,8 +59,8 @@ class SimulationIntegrationTest {
             .setTraceKey("test-tower-gen")
             .setTimeoutMs(5000L);
         
-        CompletableFuture<List<CellTower>> future = towerSource.findTowersInZone(zone, options);
-        List<CellTower> towers = future.get();
+        CompletableFuture<com.turant.cellsite.TowerResolutionResult> future = towerSource.findTowersInZone(zone, options);
+        List<CellTower> towers = future.get().towers();
         
         // Then: Should generate towers
         assertNotNull(towers);
@@ -166,7 +166,7 @@ class SimulationIntegrationTest {
             .setTraceKey("e2e-test")
             .setTimeoutMs(5000L);
         
-        List<CellTower> towers = towerSource.findTowersInZone(zone, towerOptions).get();
+        List<CellTower> towers = towerSource.findTowersInZone(zone, towerOptions).get().towers();
         assertFalse(towers.isEmpty());
         
         // 2. Subscriber matching

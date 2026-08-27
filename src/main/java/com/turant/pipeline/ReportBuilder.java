@@ -38,10 +38,20 @@ public class ReportBuilder {
         private final int failedCount;
         private final int expiredMessageCount;
         private final int towerCount;
+        private final Long startedAtMs;
+        private final Long endedAtMs;
         
         public ReportInput(String alertId, String capIdentifier, int targetedSubscriberCount,
                           int submittedCount, int acceptedCount, int deliveredCount,
                           int failedCount, int expiredMessageCount, int towerCount) {
+            this(alertId, capIdentifier, targetedSubscriberCount, submittedCount, acceptedCount,
+                deliveredCount, failedCount, expiredMessageCount, towerCount, null, null);
+        }
+        
+        public ReportInput(String alertId, String capIdentifier, int targetedSubscriberCount,
+                          int submittedCount, int acceptedCount, int deliveredCount,
+                          int failedCount, int expiredMessageCount, int towerCount,
+                          Long startedAtMs, Long endedAtMs) {
             this.alertId = alertId;
             this.capIdentifier = capIdentifier;
             this.targetedSubscriberCount = targetedSubscriberCount;
@@ -51,6 +61,8 @@ public class ReportBuilder {
             this.failedCount = failedCount;
             this.expiredMessageCount = expiredMessageCount;
             this.towerCount = towerCount;
+            this.startedAtMs = startedAtMs;
+            this.endedAtMs = endedAtMs;
         }
         
         public String getAlertId() { return alertId; }
@@ -62,17 +74,27 @@ public class ReportBuilder {
         public int getFailedCount() { return failedCount; }
         public int getExpiredMessageCount() { return expiredMessageCount; }
         public int getTowerCount() { return towerCount; }
+        public Long getStartedAtMs() { return startedAtMs; }
+        public Long getEndedAtMs() { return endedAtMs; }
     }
     
     /**
      * Build alert report from pipeline status.
      */
     public AlertReport buildAlertReport(ReportInput input) {
-        // TODO: Integrate with trace store for timing information
-        Instant startedAt = Instant.now();
-        Instant endedAt = Instant.now();
+        // Real pipeline timestamps (start time recorded at ingestion, end time
+        // recorded when the final status was stored). Nothing is fabricated here.
+        long ended = input.getEndedAtMs() != null
+            ? input.getEndedAtMs()
+            : System.currentTimeMillis();
+        long started = input.getStartedAtMs() != null
+            ? input.getStartedAtMs()
+            : ended;
+        Instant startedAt = Instant.ofEpochMilli(started);
+        Instant endedAt = Instant.ofEpochMilli(ended);
         
-        // Get latency metrics from trace store (when implemented)
+        // Latency metrics come from the EWS callback implementation (real DLR
+        // timing when available, null otherwise - never invented).
         AlertReport.LatencyMetrics latencyMs = ewsCallback.latencySectionForReport(input.getCapIdentifier());
         
         return new AlertReport(

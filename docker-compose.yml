@@ -68,7 +68,11 @@ services:
       TURANT_SMPP_PASSWORD: ${SMPP_PASSWORD:-}
       
       # Simulation mode (disable in production with real SMPP)
-      SIMULATION_MODE: ${SIMULATION_MODE:-enabled}
+      SIMULATION_MODE: ${SIMULATION_MODE:-disabled}
+      
+      # Tower source config - PostGIS table name (migration 008 creates sim_cell_towers)
+      TOWER_TABLE: ${TOWER_TABLE:-sim_cell_towers}
+      TOWER_SOURCE_MODE: ${TOWER_SOURCE_MODE:-postgis}
       
       # JVM options
       JAVA_OPTS: -Xmx1g -Xms512m -XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0

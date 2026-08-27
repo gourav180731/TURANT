@@ -1,7 +1,9 @@
 package com.turant.simulation;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -11,128 +13,93 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Simulation data REST controller for frontend.
+ * City-cluster hints for the frontend map.
  * Endpoint: GET /api/v1/sim/clusters
- * 
- * Provides city cluster hints for map visualization.
+ *
+ * NOT hardcoded. The clusters are computed at request time from the real
+ * {@code cell_towers} table: every tower carries a city/state/clusterKey in
+ * its properties JSON. Towers are grouped by (city, state) and each cluster is
+ * the weighted centroid of the real tower positions (AVG of latitude/
+ * longitude), with the tower count as weight and the bounding-box half-span
+ * (converted to km) as radiusKm. Empty when the database is unavailable.
  */
 @RestController
 @RequestMapping("/api/v1/sim")
 public class SimulationController {
-    
+
+    @Autowired(required = false)
+    private JdbcTemplate jdbcTemplate;
+
     /**
      * GET /api/v1/sim/clusters
-     * 
-     * Get city clusters for frontend map visualization.
-     * Returns simulated clusters around major Indian cities.
-     * 
+     *
      * Response: {
      *   region: string,
      *   count: number,
      *   clusters: Array<{
-     *     id: string,
-     *     name: string,
-     *     region: string,
-     *     latitude: number,
-     *     longitude: number,
-     *     radiusKm: number,
-     *     weight: number
+     *     id, name, region, latitude, longitude, radiusKm, weight
      *   }>
      * }
      */
     @GetMapping(value = "/clusters", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> getClusters() {
-        // Simulated clusters around major Indian cities
-        // These represent areas where the simulation has tower data
         List<Map<String, Object>> clusters = new ArrayList<>();
         
-        // Delhi NCR - main simulation area
-        clusters.add(Map.of(
-            "id", "delhi-ncr",
-            "name", "Delhi NCR",
-            "region", "India",
-            "latitude", 28.6139,
-            "longitude", 77.2090,
-            "radiusKm", 50,
-            "weight", 1.0
-        ));
-        
-        // Mumbai
-        clusters.add(Map.of(
-            "id", "mumbai",
-            "name", "Mumbai",
-            "region", "India",
-            "latitude", 19.0760,
-            "longitude", 72.8777,
-            "radiusKm", 40,
-            "weight", 0.9
-        ));
-        
-        // Bangalore
-        clusters.add(Map.of(
-            "id", "bangalore",
-            "name", "Bangalore",
-            "region", "India",
-            "latitude", 12.9716,
-            "longitude", 77.5946,
-            "radiusKm", 35,
-            "weight", 0.8
-        ));
-        
-        // Chennai
-        clusters.add(Map.of(
-            "id", "chennai",
-            "name", "Chennai",
-            "region", "India",
-            "latitude", 13.0827,
-            "longitude", 80.2707,
-            "radiusKm", 30,
-            "weight", 0.7
-        ));
-        
-        // Kolkata
-        clusters.add(Map.of(
-            "id", "kolkata",
-            "name", "Kolkata",
-            "region", "India",
-            "latitude", 22.5726,
-            "longitude", 88.3639,
-            "radiusKm", 30,
-            "weight", 0.7
-        ));
-        
-        // Hyderabad
-        clusters.add(Map.of(
-            "id", "hyderabad",
-            "name", "Hyderabad",
-            "region", "India",
-            "latitude", 17.3850,
-            "longitude", 78.4867,
-            "radiusKm", 35,
-            "weight", 0.7
-        ));
-        
-        // Pune
-        clusters.add(Map.of(
-            "id", "pune",
-            "name", "Pune",
-            "region", "India",
-            "latitude", 18.5204,
-            "longitude", 73.8567,
-            "radiusKm", 25,
-            "weight", 0.6
-        ));
-        
-        // Ahmedabad
-        clusters.add(Map.of(
-            "id", "ahmedabad",
-            "name", "Ahmedabad",
-            "region", "India",
-            "latitude", 23.0225,
-            "longitude", 72.5714,
-            "radiusKm", 25,
-            "weight", 0.6
-        ));
+        if (jdbcTemplate != null) {
+            jdbcTemplate.query(
+                """
+                WITH base AS (
+                    SELECT properties->>'city'            AS city,
+                           properties->>'state'           AS state,
+                           properties->>'clusterKey'      AS cluster_key,
+                           latitude,
+                           longitude
+                    FROM cell_towers
+                    WHERE properties IS NOT NULL
+                      AND properties ? 'city'
+                ),
+                agg AS (
+                    SELECT city,
+                           state,
+                           MIN(cluster_key)                                  AS cluster_key,
+                           COUNT(*)                                          AS weight,
+                           AVG(latitude)                                     AS lat,
+                           AVG(longitude)                                    AS lng,
+                           (MAX(latitude) - MIN(latitude)) / 2.0 / 111.32    AS lat_span_km,
+                           (MAX(longitude) - MIN(longitude)) / 2.0 / 111.32  AS lng_span_km
+                    FROM base
+                    GROUP BY city, state
+                )
+                SELECT city, state, cluster_key, weight, lat, lng,
+                       GREATEST(COALESCE(lat_span_km, 0), COALESCE(lng_span_km, 0)) AS radius_km
+                FROM agg
+                WHERE lat IS NOT NULL AND lng IS NOT NULL
+                ORDER BY weight DESC
+                """,
+                rs -> {
+                    String city = rs.getString("city");
+                    String state = rs.getString("state");
+                    String clusterKey = rs.getString("cluster_key");
+                    double lat = rs.getDouble("lat");
+                    double lng = rs.getDouble("lng");
+                    long weight = rs.getLong("weight");
+                    double radiusKm = rs.getDouble("radius_km");
+
+                    String id = clusterKey != null ? clusterKey
+                            : city.toLowerCase().replaceAll("\\s+", "-");
+
+                    clusters.add(Map.of(
+                        "id", id,
+                        "name", city,
+                        "region", state != null ? state : "India",
+                        "latitude", lat,
+                        "longitude", lng,
+                        "radiusKm", radiusKm,
+                        "weight", weight
+                    ));
+                }
+            );
+        }
         
         return ResponseEntity.ok(Map.of(
             "region", "India",

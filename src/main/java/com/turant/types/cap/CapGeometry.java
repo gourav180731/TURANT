@@ -18,6 +18,27 @@ public sealed interface CapGeometry permits CapPolygonGeometry, CapCircleGeometr
     String getType();
     
     /**
+     * Polygon rings (lat,lng). Empty for circle geometries.
+     */
+    default List<List<CapCoordinate>> coordinates() {
+        return List.of();
+    }
+    
+    /**
+     * Circle center. Null for polygon geometries.
+     */
+    default CapCoordinate center() {
+        return null;
+    }
+    
+    /**
+     * Circle radius in meters. Negative for polygon geometries.
+     */
+    default double radiusMeters() {
+        return -1;
+    }
+    
+    /**
      * Factory method for creating polygon geometry.
      */
     static CapGeometry polygon(List<List<CapCoordinate>> coordinates) {

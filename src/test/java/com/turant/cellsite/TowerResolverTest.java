@@ -1,5 +1,6 @@
 package com.turant.cellsite;
 
+import com.turant.cellsite.TowerResolutionResult;
 import com.turant.simulation.SimulatedTowerSource;
 import com.turant.simulation.TestDataFixtures;
 import com.turant.types.tower.CellTower;
@@ -41,14 +42,14 @@ class TowerResolverTest {
             .setTimeoutMs(5000L);
         
         // When: Resolving towers with simulated source
-        CompletableFuture<List<CellTower>> future = resolver.resolveWithSource(
+        CompletableFuture<TowerResolutionResult> future = resolver.resolveWithSource(
             simulatedSource,
             "alert-001",
             zone,
             options
         );
         
-        List<CellTower> towers = future.get(10, TimeUnit.SECONDS);
+        List<CellTower> towers = future.get(10, TimeUnit.SECONDS).towers();
         
         // Then: Should return towers
         assertNotNull(towers);
@@ -74,14 +75,14 @@ class TowerResolverTest {
         // When: Resolving towers
         long startTime = System.currentTimeMillis();
         
-        CompletableFuture<List<CellTower>> future = resolver.resolveWithSource(
+        CompletableFuture<TowerResolutionResult> future = resolver.resolveWithSource(
             simulatedSource,
             "alert-perf-001",
             zone,
             options
         );
         
-        List<CellTower> towers = future.get(10, TimeUnit.SECONDS);
+        List<CellTower> towers = future.get(10, TimeUnit.SECONDS).towers();
         long elapsedMs = System.currentTimeMillis() - startTime;
         
         // Then: Should complete quickly (simulated source is fast)
@@ -99,14 +100,14 @@ class TowerResolverTest {
             .setTimeoutMs(5000L);
         
         // When: Resolving towers (logs should be generated)
-        CompletableFuture<List<CellTower>> future = resolver.resolveWithSource(
+        CompletableFuture<TowerResolutionResult> future = resolver.resolveWithSource(
             simulatedSource,
             "alert-log-001",
             zone,
             options
         );
         
-        List<CellTower> towers = future.get(10, TimeUnit.SECONDS);
+        List<CellTower> towers = future.get(10, TimeUnit.SECONDS).towers();
         
         // Then: Should complete successfully
         // (Logs are verified manually or with log capture framework)
@@ -129,17 +130,17 @@ class TowerResolverTest {
             .setTimeoutMs(5000L);
         
         // When: Resolving towers concurrently
-        CompletableFuture<List<CellTower>> future1 = resolver.resolveWithSource(
+        CompletableFuture<TowerResolutionResult> future1 = resolver.resolveWithSource(
             simulatedSource, "alert-concurrent-1", zone1, options1);
         
-        CompletableFuture<List<CellTower>> future2 = resolver.resolveWithSource(
+        CompletableFuture<TowerResolutionResult> future2 = resolver.resolveWithSource(
             simulatedSource, "alert-concurrent-2", zone2, options2);
         
         // Wait for both
         CompletableFuture.allOf(future1, future2).get(15, TimeUnit.SECONDS);
         
-        List<CellTower> towers1 = future1.get();
-        List<CellTower> towers2 = future2.get();
+        List<CellTower> towers1 = future1.get().towers();
+        List<CellTower> towers2 = future2.get().towers();
         
         // Then: Both should succeed
         assertNotNull(towers1);
@@ -158,14 +159,14 @@ class TowerResolverTest {
             .setTimeoutMs(5000L);
         
         // When: Resolving towers in empty zone
-        CompletableFuture<List<CellTower>> future = resolver.resolveWithSource(
+        CompletableFuture<TowerResolutionResult> future = resolver.resolveWithSource(
             simulatedSource,
             "alert-empty-001",
             emptyZone,
             options
         );
         
-        List<CellTower> towers = future.get(10, TimeUnit.SECONDS);
+        List<CellTower> towers = future.get(10, TimeUnit.SECONDS).towers();
         
         // Then: Should return empty list (no geometry to match)
         assertNotNull(towers);

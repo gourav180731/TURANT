@@ -284,12 +284,12 @@ This is **NOT** a small task. Here's what's left:
 
 ### Must Preserve EXACTLY:
 1. ✅ All environment variable names (DONE)
-2. ❌ All API endpoint paths and responses (TODO)
-3. ❌ All database queries (SQL verbatim) (TODO)
-4. ❌ All Redis key patterns (TODO)
-5. ❌ SMPP PDU structure (TODO)
-6. ❌ PostGIS spatial query semantics (TODO)
-7. ❌ Worker execution behavior (TODO)
+2. ✅ **COMPLETED** — All API endpoint paths and responses: full 14-route inventory (POST trigger-by-cap/by-zone, GET pipeline-status, GET alert-towers, health, status, SMPP test endpoints) with request/response JSON shapes, error contract, and `pipeline-status` metric schema. Cross-ref: `FIX_CAP_XML_TO_POSTGIS.md §7.2`
+3. ✅ **COMPLETED** — All database queries (SQL verbatim): 5 production queries (tower multi-geometry ST_Intersects/ST_DWithin, stats SUM/UNIQUE aggregate, 500-row chunked IN-list match, matchedCount=0 diagnostic probe, subscriber format side-by-side). Cross-ref: `FIX_CAP_XML_TO_POSTGIS.md §7.3`
+4. ✅ **COMPLETED** — All Redis key patterns: 6 preserved keys with types/TTLs/contents (pipeline:status/{capId} Hash TTL 24h, pipeline:towers/{capId} Set, pipeline:startedAt/{capId} String, cell:stats/{cellId} Hash TTL 1h, dlr:{smscMsgId} Hash TTL 7d, trace:{capId} List TTL 7d). Cross-ref: `FIX_CAP_XML_TO_POSTGIS.md §7.4`
+5. ✅ **COMPLETED** — SMPP PDU structure: bind_transceiver (system_id/password/system_type/interface_version) + submit_sm field-by-field (priority_flag mapped from CAP severity/urgency, validity_period YYMMDDhhmmsstnnp from CAP <expires>, registered_delivery=1 for DLR, data_coding GSM7/UCS2). Cross-ref: `FIX_CAP_XML_TO_POSTGIS.md §7.5` + `SmppClient.java:99-150`
+6. ✅ **COMPLETED** — PostGIS spatial query semantics: SRID 4326 WGS84, CAP lat,lng → PostGIS lng,lat swap (AlertPipeline convertCapGeometry), coverage-radius model (ST_DWithin with ::geography for meters) vs polygon model (ST_Intersects coverage_geom GIST index), multi-area multi-polygon/circle loop, DISTINCT ON dedup by tower.id, LinkedHashMap flatten dedup with duplicatesRemoved counter. Cross-ref: `FIX_CAP_XML_TO_POSTGIS.md §7.6` + `PostGisTowerSource.java:112-287`
+7. ✅ **COMPLETED** — Worker execution behavior: splitBatches algorithm (total ≤ 500 → 1 batch, else ceil(workerCount × 500) round-robin consecutive sublist), WorkerJob expiresAtIso threaded uniformly across jobs, CompletableFuture parallelism, AlertSubmitSummary reduce-based integer aggregation + OR() for awaitingCredentials, partial-success semantics (per-batch exceptions caught and accumulated not thrown). Cross-ref: `FIX_CAP_XML_TO_POSTGIS.md §7.7` + `ParallelOrchestrator.java:108-196`
 
 ### Technical Challenges:
 1. **SMPP Protocol** - jSMPP vs node-smpp differences

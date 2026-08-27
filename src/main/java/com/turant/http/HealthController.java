@@ -56,10 +56,14 @@ public class HealthController {
         String smppStatus = checkSmpp();
         health.put("smpp", smppStatus);
 
-        // Overall status
-        boolean healthy = "ok".equals(dbStatus) && 
-                         "ok".equals(redisStatus) && 
-                         ("ok".equals(smppStatus) || "awaiting_credentials".equals(smppStatus));
+        // Overall status. Like the original TypeScript health endpoint, a
+        // dependency that is simply not configured (no DB/Redis URL) counts as
+        // healthy — only a configured-but-failing dependency degrades the app.
+        boolean dbOk = "ok".equals(dbStatus) || "not_configured".equals(dbStatus);
+        boolean redisOk = "ok".equals(redisStatus) || "not_configured".equals(redisStatus);
+        boolean smppOk = "ok".equals(smppStatus) || "awaiting_credentials".equals(smppStatus);
+
+        boolean healthy = dbOk && redisOk && smppOk;
 
         health.put("status", healthy ? "healthy" : "degraded");
 

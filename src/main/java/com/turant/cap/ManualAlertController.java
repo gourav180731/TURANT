@@ -239,6 +239,15 @@ public class ManualAlertController {
                     if (i > 0) xml.append(" ");
                     xml.append(coord.get(0)).append(",").append(coord.get(1));
                 }
+                // CAP 1.2 requires a closed ring (first point == last point).
+                // The frontend sends an open ring, so repeat the first vertex
+                // when it is not already the last (avoids a CapParseException).
+                List<Number> first = polygon.get(0);
+                List<Number> last = polygon.get(polygon.size() - 1);
+                if (!Objects.equals(first.get(0), last.get(0))
+                        || !Objects.equals(first.get(1), last.get(1))) {
+                    xml.append(" ").append(first.get(0)).append(",").append(first.get(1));
+                }
                 xml.append("</polygon>\n");
             }
             

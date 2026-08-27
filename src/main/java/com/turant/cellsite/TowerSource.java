@@ -26,9 +26,9 @@ public interface TowerSource {
      *
      * @param zone Alert geographic zone
      * @param options Search options (limit, timeout, tracing)
-     * @return List of matching cell towers
+     * @return TowerResolutionResult with the matching towers and real dedup audit counters
      */
-    CompletableFuture<List<CellTower>> findTowersInZone(GeoZone zone, FindTowersOptions options);
+    CompletableFuture<TowerResolutionResult> findTowersInZone(GeoZone zone, FindTowersOptions options);
     
     /**
      * Options for tower search.

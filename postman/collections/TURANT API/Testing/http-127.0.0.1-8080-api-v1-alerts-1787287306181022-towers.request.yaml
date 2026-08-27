@@ -1,0 +1,8 @@
+$kind: http-request
+name: http://127.0.0.1:8080/api/v1/alerts/1787287306181022/towers
+description: ""
+url: http://127.0.0.1:8080/api/v1/alerts/1787287306181022/towers
+method: GET
+headers:
+  Accept: application/json
+order: 3744533495476249

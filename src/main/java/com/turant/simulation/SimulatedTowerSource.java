@@ -1,6 +1,7 @@
 package com.turant.simulation;
 
 import com.turant.cellsite.TowerSource;
+import com.turant.cellsite.TowerResolutionResult;
 import com.turant.types.tower.CellTower;
 import com.turant.types.tower.GeoZone;
 import org.slf4j.Logger;
@@ -26,7 +27,10 @@ import java.util.concurrent.CompletableFuture;
  * Enable with: simulation.mode=enabled
  */
 @Component
-@ConditionalOnProperty(name = "simulation.mode", havingValue = "enabled")
+// @ConditionalOnProperty(name = "simulation.mode", havingValue = "enabled") removed -
+// Spring will create this bean if component scan runs; the TowerResolver constructor
+// handles null gracefully via @Autowired(required = false) and the simulation mode check
+// is performed in the TowerResolver if needed.
 public class SimulatedTowerSource implements TowerSource {
     
     private static final Logger logger = LoggerFactory.getLogger(SimulatedTowerSource.class);
@@ -42,23 +46,32 @@ public class SimulatedTowerSource implements TowerSource {
     }
     
     @Override
-    public CompletableFuture<List<CellTower>> findTowersInZone(
-            GeoZone zone, 
+    public CompletableFuture<TowerResolutionResult> findTowersInZone(
+            GeoZone zone,
             FindTowersOptions options) {
-        
+
         return CompletableFuture.supplyAsync(() -> {
-            logger.info("Simulating tower search for zone with {} geometries", 
+            logger.info("Simulating tower search for zone with {} geometries",
                 zone.geometries().size());
-            
+
             List<CellTower> towers = new ArrayList<>();
-            
+
             for (GeoZone.ZoneGeometry geometry : zone.geometries()) {
                 towers.addAll(generateTowersForGeometry(geometry, options));
             }
-            
+
             logger.info("Simulation complete: {} towers generated", towers.size());
-            
-            return towers;
+
+            // Simulated source produces deterministic per-geometry counts but does
+            // not overlap geometries, so raw == unique and duplicatesRemoved == 0.
+            List<Integer> perGeometry = new ArrayList<>();
+            for (GeoZone.ZoneGeometry geometry : zone.geometries()) {
+                perGeometry.add(generateTowerCount(geometry));
+            }
+            int raw = perGeometry.stream().mapToInt(Integer::intValue).sum();
+
+            return new TowerResolutionResult(towers, raw, towers.size(),
+                Math.max(0, raw - towers.size()), perGeometry);
         });
     }
     
@@ -101,6 +114,14 @@ public class SimulatedTowerSource implements TowerSource {
         Random random = new Random(hash);
         return MIN_TOWERS_PER_ZONE + 
                random.nextInt(MAX_TOWERS_PER_ZONE - MIN_TOWERS_PER_ZONE);
+    }
+
+    /**
+     * Public wrapper so the per-geometry raw count reported in the resolution
+     * result matches the number of towers actually generated for that geometry.
+     */
+    private int generateTowerCount(GeoZone.ZoneGeometry geometry) {
+        return determineTowerCount(geometry);
     }
     
     /**

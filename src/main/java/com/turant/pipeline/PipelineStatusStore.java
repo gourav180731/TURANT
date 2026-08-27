@@ -20,6 +20,22 @@ public class PipelineStatusStore {
     
     private final Map<String, PipelineStatusRecord> statuses = new ConcurrentHashMap<>();
     private final Map<String, List<CellTower>> towers = new ConcurrentHashMap<>();
+    private final Map<String, Long> startedAt = new ConcurrentHashMap<>();
+    
+    /**
+     * Record when the pipeline started for an alert (first-write wins so later
+     * stage updates never overwrite the true start time).
+     */
+    public void markStarted(String capIdentifier, long timestampMs) {
+        startedAt.putIfAbsent(capIdentifier, timestampMs);
+    }
+    
+    /**
+     * Real pipeline start time for an alert (epoch ms), or null if unknown.
+     */
+    public Long startedAtOf(String capIdentifier) {
+        return startedAt.get(capIdentifier);
+    }
     
     /**
      * Update pipeline status.
@@ -55,5 +71,6 @@ public class PipelineStatusStore {
     public void remove(String capIdentifier) {
         statuses.remove(capIdentifier);
         towers.remove(capIdentifier);
+        startedAt.remove(capIdentifier);
     }
 }

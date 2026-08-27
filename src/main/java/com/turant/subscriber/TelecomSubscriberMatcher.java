@@ -4,8 +4,10 @@ import com.turant.types.tower.CellTower;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Service;
 
+import javax.sql.DataSource;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
@@ -19,8 +21,13 @@ import java.util.stream.Collectors;
  * repository) and returns their real MSISDNs.
  * 
  * Migrated from TypeScript telecom/matcher/telecom-subscriber-matcher.ts
+ * 
+ * CONDITIONAL BEAN:
+ * Only created when DataSource is available (i.e., database is configured).
+ * In simulation mode without database, SimulatedSubscriberMatcher is used instead.
  */
 @Service
+@ConditionalOnBean(DataSource.class)
 public class TelecomSubscriberMatcher implements SubscriberMatcher {
     
     private static final Logger logger = LoggerFactory.getLogger(TelecomSubscriberMatcher.class);

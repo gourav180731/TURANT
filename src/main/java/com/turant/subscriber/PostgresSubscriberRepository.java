@@ -1,5 +1,6 @@
 package com.turant.subscriber;
 
+import com.turant.config.ConditionalOnDatabaseConfigured;
 import com.turant.types.subscriber.Subscriber;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,9 +23,13 @@ import java.util.stream.Collectors;
  * Table + column names come from SUBSCRIBER_COL_* env vars, so pointing
  * this at the real C-DOT subscriber schema is a .env change only.
  * 
+ * Only created when database is configured. In simulation mode, use
+ * SimulatedSubscriberMatcher instead.
+ * 
  * Migrated from TypeScript telecom/repositories/postgres-subscriber-repository.ts
  */
 @Repository
+@ConditionalOnDatabaseConfigured
 public class PostgresSubscriberRepository implements SubscriberRepository {
     
     private static final Logger logger = LoggerFactory.getLogger(PostgresSubscriberRepository.class);
