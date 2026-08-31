@@ -1,8 +1,10 @@
 package com.turant.pipeline;
 
 import com.turant.cap.CapIngestionService;
+import com.turant.http.ApiError;
 import com.turant.types.cap.CapAlert;
 import com.turant.types.report.AlertReport;
+import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -53,7 +55,7 @@ public class PipelineController {
      * Trigger pipeline execution for an existing CAP alert.
      */
     @PostMapping("/trigger")
-    public CompletableFuture<ResponseEntity<Object>> triggerPipeline(@RequestBody TriggerRequest request) {
+    public CompletableFuture<ResponseEntity<Object>> triggerPipeline(@RequestBody TriggerRequest request, HttpServletRequest httpReq) {
         String capIdentifier = request.capIdentifier();
         String alertId = request.alertId() != null ? request.alertId() : capIdentifier;
         
@@ -61,9 +63,9 @@ public class PipelineController {
         
         return capService.getAlert(alertId).thenCompose(alertOpt -> {
             if (alertOpt.isEmpty()) {
+                ApiError err = ApiError.of(httpReq, 404, "Not Found", "ALERT_NOT_FOUND", "Alert not found: " + alertId);
                 return CompletableFuture.completedFuture(
-                    ResponseEntity.status(HttpStatus.NOT_FOUND)
-                        .body((Object) new ErrorResponse("Alert not found: " + alertId))
+                    ResponseEntity.status(HttpStatus.NOT_FOUND).body((Object) err)
                 );
             }
             
@@ -74,8 +76,8 @@ public class PipelineController {
             
             return alertPipeline.runAlertPipeline(input).handle((status, err) -> {
                 if (err != null) {
-                    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                        .body((Object) new ErrorResponse("Pipeline failed: " + err.getMessage()));
+                    ApiError apiErr = ApiError.of(httpReq, 500, "Internal Server Error", "PIPELINE_FAILED", "Pipeline failed: " + err.getMessage());
+                    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body((Object) apiErr);
                 }
                 return ResponseEntity.ok((Object) new TriggerResponse(
                     capIdentifier, alertId, "triggered", status.status(), status.stage()
@@ -94,14 +96,14 @@ public class PipelineController {
     @PostMapping(value = "/trigger-by-cap",
             consumes = {"application/xml", "text/xml", "application/*+xml", "text/plain", "*/*"},
             produces = "application/json")
-    public CompletableFuture<ResponseEntity<Object>> triggerByCap(@RequestBody(required = false) String capXml) {
+    public CompletableFuture<ResponseEntity<Object>> triggerByCap(@RequestBody(required = false) String capXml, HttpServletRequest httpReq) {
         if (capXml == null || capXml.isBlank()) {
-            return CompletableFuture.completedFuture(
-                ResponseEntity.status(HttpStatus.BAD_REQUEST).body((Object) new ErrorResponse("Empty CAP XML body")));
+            ApiError err = ApiError.of(httpReq, 400, "Bad Request", "EMPTY_CAP", "Empty CAP XML body");
+            return CompletableFuture.completedFuture(ResponseEntity.status(HttpStatus.BAD_REQUEST).body((Object) err));
         }
         if (capXml.length() > 20 * 1024 * 1024) {
-            return CompletableFuture.completedFuture(
-                ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body((Object) new ErrorResponse("CAP XML exceeds 20 MB limit: " + capXml.length())));
+            ApiError err = ApiError.of(httpReq, 413, "Payload Too Large", "CAP_TOO_LARGE", "CAP XML exceeds 20 MB limit: " + capXml.length());
+            return CompletableFuture.completedFuture(ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body((Object) err));
         }
         LoggerFactory.getLogger(PipelineController.class).info("Pipeline trigger with CAP XML, length={}", capXml.length());
         
@@ -115,8 +117,8 @@ public class PipelineController {
                 if (err != null) {
                     Throwable cause = err.getCause() != null ? err.getCause() : err;
                     LoggerFactory.getLogger(PipelineController.class).error("Pipeline failed for capIdentifier={}: {}", capIdentifier, cause.getMessage(), cause);
-                    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                        .body((Object) new ErrorResponse("Pipeline failed: " + cause.getMessage()));
+                    ApiError apiErr = ApiError.of(httpReq, 500, "Internal Server Error", "PIPELINE_FAILED", "Pipeline failed: " + cause.getMessage());
+                    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body((Object) apiErr);
                 }
                 return ResponseEntity.ok((Object) new TriggerResponse(
                     capIdentifier, capIdentifier, "triggered", status.status(), status.stage()
@@ -124,45 +126,44 @@ public class PipelineController {
             });
         }).exceptionally(err -> {
             Throwable cause = err.getCause() != null ? err.getCause() : err;
-            // CapParseException → 400, everything else → 500 with detail
-            boolean isParse = cause.getMessage() != null && cause.getMessage().contains("CAP");
+            boolean isParse = cause instanceof com.turant.cap.CapParseException || (cause.getMessage() != null && cause.getMessage().contains("CAP"));
             HttpStatus status = isParse ? HttpStatus.BAD_REQUEST : HttpStatus.INTERNAL_SERVER_ERROR;
+            String code = isParse ? "CAP_PARSE_ERROR" : "INGEST_FAILED";
             LoggerFactory.getLogger(PipelineController.class).error("trigger-by-cap failed: {}", cause.getMessage(), cause);
-            return ResponseEntity.status(status)
-                .body((Object) new ErrorResponse((isParse ? "CAP parsing failed: " : "Pipeline failed: ") + cause.getMessage()));
+            ApiError apiErr = ApiError.of(httpReq, status.value(), status.getReasonPhrase(), code, (isParse ? "CAP parsing failed: " : "Pipeline failed: ") + cause.getMessage());
+            return ResponseEntity.status(status).body((Object) apiErr);
         });
     }
     
     /**
-     * GET /api/v1/pipeline/:capIdentifier/pipeline-status
-     * 
-     * Get pipeline status (alternative endpoint for compatibility).
+     * GET /api/v1/pipeline/{capIdentifier}/pipeline-status
+     * @deprecated Canonical is GET /api/v1/pipeline/status/{capIdentifier}. Kept for backward compatibility.
      */
+    @Deprecated(since = "1.0", forRemoval = false)
     @GetMapping("/{capIdentifier}/pipeline-status")
-    public ResponseEntity<?> getPipelineStatus(@PathVariable String capIdentifier) {
+    public ResponseEntity<?> getPipelineStatus(@PathVariable String capIdentifier, HttpServletRequest httpReq) {
         LoggerFactory.getLogger(PipelineController.class).info("Checking pipeline status for: {}", capIdentifier);
         
         PipelineStatusRecord status = statusStore.get(capIdentifier);
         
         if (status == null) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(new ErrorResponse("No pipeline status found for: " + capIdentifier));
+            ApiError err = ApiError.of(httpReq, 404, "Not Found", "PIPELINE_NOT_FOUND", "No pipeline status found for: " + capIdentifier);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(err);
         }
         
         return ResponseEntity.ok(status);
     }
     
     /**
-     * GET /api/v1/pipeline/status/:capIdentifier
-     * 
-     * Get current pipeline status for an alert.
+     * GET /api/v1/pipeline/status/{capIdentifier} — CANONICAL status endpoint for EWS polling.
      */
     @GetMapping("/status/{capIdentifier}")
-    public ResponseEntity<PipelineStatusRecord> getStatus(@PathVariable String capIdentifier) {
+    public ResponseEntity<?> getStatus(@PathVariable String capIdentifier, HttpServletRequest httpReq) {
         PipelineStatusRecord status = statusStore.get(capIdentifier);
         
         if (status == null) {
-            return ResponseEntity.notFound().build();
+            ApiError err = ApiError.of(httpReq, 404, "Not Found", "PIPELINE_NOT_FOUND", "No pipeline status found for: " + capIdentifier);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(err);
         }
         
         return ResponseEntity.ok(status);
@@ -174,12 +175,12 @@ public class PipelineController {
      * Get matched towers for an alert (for frontend map visualization).
      */
     @GetMapping("/towers/{capIdentifier}")
-    public ResponseEntity<?> getTowers(@PathVariable String capIdentifier) {
+    public ResponseEntity<?> getTowers(@PathVariable String capIdentifier, HttpServletRequest httpReq) {
         var towers = statusStore.getTowers(capIdentifier);
         
         if (towers == null) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(new ErrorResponse("No towers found for alert: " + capIdentifier));
+            ApiError err = ApiError.of(httpReq, 404, "Not Found", "TOWERS_NOT_FOUND", "No towers found for alert: " + capIdentifier);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(err);
         }
         
         return ResponseEntity.ok(new TowersResponse(capIdentifier, towers.size(), towers));
@@ -191,17 +192,17 @@ public class PipelineController {
      * Get completion report for an alert.
      */
     @GetMapping("/report/{capIdentifier}")
-    public ResponseEntity<?> getReport(@PathVariable String capIdentifier) {
+    public ResponseEntity<?> getReport(@PathVariable String capIdentifier, HttpServletRequest httpReq) {
         PipelineStatusRecord status = statusStore.get(capIdentifier);
         
         if (status == null) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(new ErrorResponse("No status found for alert: " + capIdentifier));
+            ApiError err = ApiError.of(httpReq, 404, "Not Found", "REPORT_NOT_FOUND", "No status found for alert: " + capIdentifier);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(err);
         }
         
         if (!"completed".equals(status.status())) {
-            return ResponseEntity.status(HttpStatus.ACCEPTED)
-                .body(new ErrorResponse("Alert processing not yet complete: " + status.stage()));
+            ApiError err = ApiError.of(httpReq, 202, "Accepted", "REPORT_NOT_READY", "Alert processing not yet complete: " + status.stage());
+            return ResponseEntity.status(HttpStatus.ACCEPTED).body(err);
         }
         
         // Build report from the real status record.

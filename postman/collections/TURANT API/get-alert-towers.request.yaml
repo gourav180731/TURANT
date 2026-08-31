@@ -1,8 +1,11 @@
 $kind: http-request
-name: 'GET alert towers'
+name: 'GET pipeline towers (CANONICAL)'
 method: GET
-url: '{{baseUrl}}/api/v1/alerts/:capIdentifier/towers'
+url: '{{baseUrl}}/api/v1/pipeline/towers/:capIdentifier'
 order: 5000
+headers:
+  - key: X-API-KEY
+    value: '{{apiKey}}'
 pathVariables:
   - key: capIdentifier
     value: '{{capIdentifier}}'

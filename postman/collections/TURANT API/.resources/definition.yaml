@@ -3,3 +3,7 @@ name: 'TURANT API'
 variables:
   - key: baseUrl
     value: 'http://127.0.0.1:8080'
+  - key: capIdentifier
+    value: 'demo-cap-001'
+  - key: apiKey
+    value: 'test-key-12345'

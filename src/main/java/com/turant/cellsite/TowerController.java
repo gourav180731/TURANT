@@ -17,19 +17,17 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Tower resolution REST controller.
- * Endpoints:
- *   GET /api/v1/alerts/:capIdentifier/pipeline-status
- *   GET /api/v1/alerts/:capIdentifier/towers
- *   GET /api/v1/alerts/:capIdentifier/report
- * 
- * Returns the real towers matched by the pipeline (PostGIS polygon match) and
- * the real subscriber counts computed from the precomputed per-cell stats.
- * 
+ * Tower resolution REST controller — LEGACY aliases under /api/v1/alerts.
+ * Canonical endpoints are under /api/v1/pipeline.
+ * Prefer GET /api/v1/pipeline/towers/{capIdentifier} (PipelineController)
+ * and GET /api/v1/pipeline/status/{capIdentifier}.
+ * These /alerts aliases are retained for backward compatibility and will be removed.
+ *
  * Migrated from TypeScript Module 02 + Module 12 report routes
  */
 @RestController
 @RequestMapping("/api/v1/alerts")
+@Deprecated(since = "1.0", forRemoval = false)
 public class TowerController {
     
     private static final Logger logger = LoggerFactory.getLogger(TowerController.class);

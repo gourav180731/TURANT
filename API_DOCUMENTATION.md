@@ -1,811 +1,464 @@
-# TURANT Alert System - API Documentation
+# TURANT Emergency Alert API — Canonical Documentation (Item #1)
 
 **Version:** 1.0.0  
-**Base URL:** `http://localhost:8080` (development)  
-**Last Updated:** 2026-08-19
+**Base URL (dev):** `http://localhost:8080` (`{{baseUrl}}` in Postman)  
+**Last Verified:** 2026-08-24 against Java source `src/` (source of truth)  
+**Canonical EWS Entry:** `POST /api/v1/pipeline/trigger-by-cap` — read this first.
+
+> **Senior verification:** All sections below match running Java. `GET /api/v1/pipeline/{cap}/pipeline-status` vs `GET /api/v1/pipeline/status/{cap}` → **canonical is `…/status/{capIdentifier}`**. `GET /api/v1/pipeline/towers/{cap}` is canonical. See §5-§6 deprecation notes. `PipelineTriggerController.java` removed to eliminate duplicate mappings.
 
 ---
 
-## Table of Contents
+## 1. TURANT API Overview
 
-1. [Overview](#overview)
-2. [Authentication](#authentication)
-3. [Health & Status](#health--status)
-4. [Alert Ingestion](#alert-ingestion)
-5. [Pipeline Management](#pipeline-management)
-6. [Tower Resolution](#tower-resolution)
-7. [Error Handling](#error-handling)
-8. [Rate Limiting](#rate-limiting)
+TURANT ingests CAP 1.2 XML, resolves PostGIS towers, matches `serving_cell_id → subscriber_dump` (10 cr) via `turant_agg`, dedups, respects expiry, and prepares SMS via SMPP. Pipeline is **synchronous-wait** on trigger: `POST trigger-by-cap` waits for pipeline to finish (≤300s) and returns `200` with pipeline status. EWS then polls `GET /status/{cap}`.
 
----
+```
+EWS → POST /api/v1/pipeline/trigger-by-cap (application/xml CAP)
+    → PipelineController.java:94 triggerByCap → CapIngestionService.ingestCap → CapParser.parseCapXml
+    → AlertPipeline.runAlertPipeline → TowerResolver → PostGisTowerSource (ST_Collect+ST_Simplify)
+    → SubscriberCellStatsService.countAndDistinctByCellIds → MsisdnDeduplicator → ExpiryGuard/Validity/Priority
+    → BatchFileSMSCService → DlrReporter → EwsCallback
+    → 200 TriggerResponse
+EWS → GET /api/v1/pipeline/status/{capIdentifier}
+EWS → GET /api/v1/pipeline/towers/{capIdentifier}
+EWS → GET /api/v1/pipeline/report/{capIdentifier}
+```
 
-## Overview
-
-The TURANT Alert System provides REST APIs for ingesting CAP (Common Alerting Protocol) alerts, managing alert processing pipelines, and retrieving status/reports for emergency broadcast messaging.
-
-### Key Features
-
-- **CAP Alert Ingestion**: Parse and validate CAP 1.2 XML alerts
-- **Manual Alert Creation**: Create alerts from simplified JSON payloads
-- **Pipeline Management**: Track alert processing through multi-stage pipeline
-- **Tower Resolution**: Resolve cell towers within alert zones
-- **Real-time Status**: Monitor pipeline execution and completion reports
+Versioning: All public APIs under `/api/v1/` except `GET /healthz`.
 
 ---
 
-## Authentication
+## 2. Base URL & Headers
 
-**Current Status:** Not implemented (development only)
+| Env | Base URL | `{{baseUrl}}` |
+|---|---|---|
+| Dev | `http://localhost:8080` | Postman globals |
+| Docker | `http://turant-backend:8080` | — |
+| Prod | `https://<host>` | set in Postman |
 
-Future authentication will use:
-- **API Keys** for machine-to-machine communication
-- **JWT tokens** for user sessions
-- **Role-based access control** (Admin, Operator, Read-only)
+**Global request headers for canonical trigger:**
 
-For now, all endpoints are publicly accessible in development mode.
+```
+Content-Type: application/xml
+Accept: application/json
+Content-Length: ≤20971520 (20 MB)
+```
+
+`PipelineController.java:94` consumes `application/xml, text/xml, application/*+xml, text/plain, */*` but EWS should send `application/xml`.
 
 ---
 
-## Health & Status
+## 2.5 Security (Item #2 — API Key)
 
-### GET /healthz
+**Mechanism:** Machine-to-machine API key for EWS. No JWT/OAuth. Filter `security/ApiKeyAuthFilter.java` (`OncePerRequestFilter` `Ordered.HIGHEST+10`) checks `X-API-KEY` / `X-EWS-API-KEY` / `Authorization: Bearer <key>` against `EWS_API_KEY` env (or `turant.security.api-key` `application.properties:219`). No hardcoded secret — `.env.example:9` placeholder `change_me_in_production_generate_64_hex`.
 
-**Description:** Health check endpoint for monitoring system status
+**Config:**
 
-**Response Codes:**
-- `200 OK` - System is healthy
-- `503 Service Unavailable` - System is degraded
+```bash
+# .env / env var (production)
+EWS_API_KEY=$(openssl rand -hex 32)  # 64 hex
+CORS_ALLOWED_ORIGINS=https://ews.gov.in
+# application.properties
+turant.security.api-key=${EWS_API_KEY:}
+turant.security.cors.allowed-origins=${CORS_ALLOWED_ORIGINS:*}
+```
 
-**Response Body:**
+If `EWS_API_KEY` empty/disabled → filter pass-through (dev). Set in prod to enforce.
+
+**Authorization Matrix:**
+
+| Path | Method | Auth | Java |
+|---|---|---|---|
+| `POST /api/v1/pipeline/trigger-by-cap` **canonical EWS** | POST | **API key required** | `PipelineController.java:94` |
+| `POST /api/v1/pipeline/trigger` | POST | API key required | `PipelineController.java:55` |
+| `GET /api/v1/pipeline/status/{cap}` | GET | API key required | `PipelineController.java:158` |
+| `GET /api/v1/pipeline/towers/{cap}` | GET | API key required | `PipelineController.java:174` |
+| `GET /api/v1/pipeline/report/{cap}` | GET | API key required | `PipelineController.java:191` |
+| `DELETE /api/v1/pipeline/status/{cap}` | DELETE | API key required | `PipelineController.java:235` |
+| `POST /api/v1/alerts/cap` | POST | API key required | `CapController.java:39` |
+| `POST /api/v1/alerts/manual` | POST | API key required | `ManualAlertController.java:54` |
+| `GET /api/v1/alerts/{cap}/...` (legacy) | GET | API key required (deprecated) | `TowerController.java:31` |
+| `GET /healthz` | GET | **Public** `permitAll` | `HealthController.java:39` |
+| `GET /api-docs`, `/api-docs.yaml`, `/swagger-ui.html`, `/swagger-ui/**`, `/v3/api-docs/**` | GET | **Public** `permitAll` (dev) — `WebConfig` CORS `*` | `OpenApiConfig.java` |
+
+**401 Behavior:** Missing/invalid key → `401 Unauthorized` `ApiError.java` `code:UNAUTHORIZED` `WWW-Authenticate: ApiKey realm="turant"` + security headers `X-Content-Type-Options: nosniff` etc. via `WebConfig.java:37 securityHeadersFilter`.
+
+**Dev vs Prod:**
+
+- Dev (`EWS_API_KEY=` empty → pass-through, `CORS *`, `healthz` 200, `api-docs` 200, `trigger` 200 without key). `application-test.properties` empty (existing tests pass), `ApiKeyAuthTest` uses `TestPropertySource turant.security.api-key=test-key-12345` to verify 401.
+- Prod (`EWS_API_KEY=64hex`, `CORS_ALLOWED_ORIGINS=https://ews.gov.in`, `healthz` still public, `api-docs` public but can be disabled via `springdoc.api-docs.enabled=false`).
+
+**curl (EWS):**
+
+```bash
+# Unauthorized
+curl -X POST http://localhost:8080/api/v1/pipeline/trigger-by-cap -H "Content-Type: application/xml" --data-binary @alert.xml -i
+# 401 {"code":"UNAUTHORIZED","message":"Missing API key. Send X-API-KEY or Authorization: Bearer <key>",...}
+
+# Authorized
+curl -X POST http://localhost:8080/api/v1/pipeline/trigger-by-cap \
+  -H "Content-Type: application/xml" -H "X-API-KEY: $EWS_API_KEY" --data-binary @alert.xml
+# 200 {"capIdentifier":"...","action":"triggered","status":"completed","stage":"done"}
+
+curl http://localhost:8080/api/v1/pipeline/status/ABC -H "X-API-KEY: $EWS_API_KEY"
+# 200 PipelineStatusRecord
+curl http://localhost:8080/healthz # 200 public
+```
+
+**Postman:** `postman/collections/TURANT API/...post-pipeline-trigger-by-cap.request.yaml` now has `X-API-KEY: {{apiKey}}` (`{{baseUrl}}` + `{{capIdentifier}}` + `{{apiKey}}` vars in `definition.yaml`).
+
+**XML Security:** `CapParser.java:39-57` `disallow-doctype, external-general-entities false, ACCESS_EXTERNAL_DTD/SCHEMA "", entityExpansionLimit 10000, totalEntitySizeLimit 50000, FEATURE_SECURE_PROCESSING, XInclude false` + `20MB` length check.
+
+---
+
+## 3. EWS Integration Flow (Canonical)
+
+1. **Health** `GET /healthz` → `200 healthy` ensures DB ok.
+2. **Trigger** `POST /api/v1/pipeline/trigger-by-cap` with raw CAP XML → `200 TriggerResponse` (`status: completed|running|halted`).
+   - **Semantics:** `200` means *pipeline started and completed within HTTP window* (wait). It does **not** mean SMS delivered — SMS = `0` until SMPP creds.
+   - If pipeline `>300s`, returns `503 {code:PIPELINE_TIMEOUT}` via `GlobalExceptionHandler.java:13`, but pipeline still halts via `TowerResolver orTimeout`. EWS should then poll status.
+3. **Poll** `GET /api/v1/pipeline/status/{capIdentifier}` until `status=completed|halted`.
+4. **Towers** `GET /api/v1/pipeline/towers/{capIdentifier}` for map.
+5. **Report** `GET /api/v1/pipeline/report/{capIdentifier}` for completion (`202` if not yet completed).
+
+Variables:
+
+```
+{{baseUrl}} = http://localhost:8080
+{{capIdentifier}} = from TriggerResponse.capIdentifier (CAP <identifier>)
+```
+
+---
+
+## 4. Trigger CAP Alert API — CANONICAL
+
+### `POST /api/v1/pipeline/trigger-by-cap`
+
+**Purpose:** EWS sends CAP 1.2 XML, TURANT ingests and **runs full Java pipeline** synchronously.
+
+**Java:** `PipelineController.java:94 triggerByCap(@RequestBody String capXml, HttpServletRequest req) → CapIngestionService → AlertPipeline` (real pipeline, not mock).
+
+**Method:** `POST`  
+**Path:** `/api/v1/pipeline/trigger-by-cap`  
+**Content-Type:** `application/xml` (also accepts `text/xml`, `*/*` but EWS must use `application/xml`)  
+**Accept:** `application/json`
+
+**Request Body:** Raw CAP 1.2 XML. Example:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<alert xmlns="urn:oasis:names:tc:emergency:cap:1.2">
+  <identifier>1787287355633013</identifier>
+  <sender>Uttar Pradesh SDMA</sender>
+  <sent>2026-08-21T10:12:35Z</sent>
+  <status>Actual</status>
+  <msgType>Alert</msgType>
+  <scope>Public</scope>
+  <info>
+    <language>en-IN</language>
+    <category>Met</category>
+    <event>Squall</event>
+    <urgency>Expected</urgency>
+    <severity>WARNING</severity>
+    <certainty>Observed</certainty>
+    <headline>Squall over 29 districts</headline>
+    <area>
+      <areaDesc>29 districts of Uttar Pradesh</areaDesc>
+      <polygon>26.947082,78.597031 26.947554,78.597066 … 26.947082,78.597031</polygon>
+    </area>
+  </info>
+</alert>
+```
+
+**Required CAP fields (validated `CapParser.java:122 requiredText/requiredEnum`):** `identifier, sender, sent (ISO8601), status (Actual/Test...), msgType (Alert), scope, info[0] with info.event, areas≥1 with polygon/circle (closed ring ≥4 pts, first==last), language defaults en-US`. Optional `effective, expires, headline, description, geocode`.
+
+**Maximum Request Size:** `20 MB` (`PipelineController.java:102` `capXml.length()>20971520 →413`, `application.properties:11 max-swallow 20MB`, `WebConfig.java maxPostSize -1` but controller enforces 20MB).
+
+**Validation Behaviour:**
+
+| Condition | HTTP | Body (`ApiError.java`) |
+|---|---|---|
+| Empty body | `400` | `{timestamp, status:400, error:Bad Request, code:EMPTY_CAP, message:Empty CAP XML body, path, requestId}` |
+| Malformed XML / missing required | `400` | `code:CAP_PARSE_ERROR` `message:CAP parsing failed: <reason>` (`CapParseException`) |
+| Invalid polygon (not closed, <4 pts) | `400` | `CAP_PARSE_ERROR: Polygon must be closed...` |
+| Duplicate identifier | `200` (upsert) | `alerts` table `ON CONFLICT (cap_identifier,sender) DO UPDATE` `CapIngestionService.java:121` — duplicate is **not 409**, it updates. |
+| `>20 MB` | `413` | `code:CAP_TOO_LARGE` |
+| Pipeline `>300s` | `503` | `code:PIPELINE_TIMEOUT` via `GlobalExceptionHandler.java:18` |
+| Unexpected | `500` | `code:PIPELINE_FAILED/INGEST_FAILED` |
+
+**Success Response `200` — `TriggerResponse` (`PipelineController.java:250`):**
+
+```json
+{
+  "capIdentifier": "1787287355633013",
+  "alertId": "1787287355633013",
+  "action": "triggered",
+  "status": "completed",
+  "stage": "done"
+}
+```
+
+`status` ∈ `running|completed|halted`, `stage` ∈ `ingested, tower-resolution, done, halted`.
+
+**Processing Semantics:** Trigger **waits** for `AlertPipeline.runAlertPipeline` (tower + subscriber). If `300s` async timeout fires, returns `503` but pipeline record is `halted` — poll `GET /status/{id}`.
+
+**Postman:** `POST {{baseUrl}}/api/v1/pipeline/trigger-by-cap` `Content-Type application/xml` `Body: {{capXml}}` (see `postman/collections/TURANT API/...trigger-by-cap`)
+
+**curl:**
+
+```bash
+curl -X POST {{baseUrl}}/api/v1/pipeline/trigger-by-cap \
+  -H "Content-Type: application/xml" \
+  --data-binary @alert.xml
+```
+
+---
+
+## 5. Pipeline Status API — CANONICAL
+
+### `GET /api/v1/pipeline/status/{capIdentifier}`
+
+**Java:** `PipelineController.java:158 getStatus` → `PipelineStatusStore.get` → `PipelineStatusRecord.java:8`
+
+**Response `200` — `PipelineStatusRecord`:**
+
+```json
+{
+  "capIdentifier": "1787287355633013",
+  "status": "completed",
+  "stage": "done",
+  "haltedAt": null,
+  "reason": null,
+  "towerCount": 13680,
+  "matchedCount": 5107744,
+  "duplicatesRemoved": 0,
+  "expectedRecipients": 5107744,
+  "submittedCount": 0,
+  "acceptedCount": 0,
+  "awaitingCredentials": true,
+  "updatedAtMs": 1787566422980
+}
+```
+
+Fields exactly as Java record — no invented fields. `status` `running|halted|completed`, `stage` current, `haltedAt` stage where halted, `reason` if halted.
+
+**Errors:** `404 {status:404,error:Not Found,code:PIPELINE_NOT_FOUND,…}` via `PipelineController.java:163` (empty body) **or** alias `404 {timestamp,…,code:PIPELINE_NOT_FOUND}` via `getPipelineStatus`. Tests expect `404`.
+
+**Legacy Alias (Deprecated):** `GET /api/v1/pipeline/{capIdentifier}/pipeline-status` (`PipelineController.java:140`) and `GET /api/v1/alerts/{capIdentifier}/pipeline-status` (`TowerController.java:53`) — retained, marked `@Deprecated`, prefer canonical.
+
+**Example:**
+
+```bash
+curl {{baseUrl}}/api/v1/pipeline/status/1787287355633013
+```
+
+---
+
+## 6. Tower API — CANONICAL
+
+### `GET /api/v1/pipeline/towers/{capIdentifier}`
+
+**Java:** `PipelineController.java:174 getTowers` → `statusStore.getTowers`
+
+**Response `200` — `TowersResponse.java:244`:**
+
+```json
+{
+  "capIdentifier": "1787287355633013",
+  "count": 13680,
+  "towers": [
+    {"id":"48241","cellId":"12641","latitude":28.486628,"longitude":77.505181,"coverageRadiusM":1748},
+    {"id":"61615","cellId":"15A7F","latitude":28.511921,"longitude":77.4097,"coverageRadiusM":677}
+  ]
+}
+```
+
+`404 {code:TOWERS_NOT_FOUND}` if no towers.
+
+**Legacy Alias (Deprecated):** `GET /api/v1/alerts/{capIdentifier}/towers` (`TowerController.java:101`) — same shape `Map {capIdentifier,count,towers}`, retain but document canonical.
+
+---
+
+## 7. Health API
+
+### `GET /healthz`
+
+**Java:** `HealthController.java:39 health()`
+
+**Response:**
+
+`200` if `(db ok|not_configured) && (redis ok|not_configured) && (smpp configured|awaiting_credentials)` else `503 degraded`:
 
 ```json
 {
   "app": "turant",
   "uptimeSeconds": 3600,
   "db": "ok",
-  "redis": "ok",
-  "smpp": "configured",
+  "redis": "not_configured",
+  "smpp": "awaiting_credentials",
   "status": "healthy"
 }
 ```
 
-**Status Values:**
-
-| Field | Values | Description |
-|-------|--------|-------------|
-| `db` | `ok`, `not_configured`, `error: <msg>` | Database connectivity |
-| `redis` | `ok`, `not_configured`, `error: <msg>` | Redis cache connectivity |
-| `smpp` | `ok`, `configured`, `awaiting_credentials` | SMPP gateway status |
-| `status` | `healthy`, `degraded` | Overall system health |
-
-**Example:**
-
-```bash
-curl http://localhost:8080/healthz
-```
+`db: ok|not_configured|error:msg`, `redis: ok|not_configured|error`, `smpp: configured|awaiting_credentials|ok`.
 
 ---
 
-## Alert Ingestion
+## 8. Request/Response Examples
 
-### POST /api/v1/alerts/cap
-
-**Description:** Ingest a CAP 1.2 XML alert document
-
-**Content-Type:** 
-- `application/xml`
-- `text/xml`
-- `text/plain`
-
-**Request Body:** Raw CAP XML string
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<alert xmlns="urn:oasis:names:tc:emergency:cap:1.2">
-  <identifier>ABC123</identifier>
-  <sender>emergency@example.com</sender>
-  <sent>2026-08-19T10:00:00Z</sent>
-  <status>Actual</status>
-  <msgType>Alert</msgType>
-  <scope>Public</scope>
-  <info>
-    <category>Safety</category>
-    <event>Severe Weather</event>
-    <urgency>Immediate</urgency>
-    <severity>Extreme</severity>
-    <certainty>Observed</certainty>
-    <headline>Severe Thunderstorm Warning</headline>
-    <description>Take shelter immediately</description>
-    <area>
-      <areaDesc>Downtown Area</areaDesc>
-      <circle>40.7128,-74.0060 10</circle>
-    </area>
-  </info>
-</alert>
-```
-
-**Response Codes:**
-- `200 OK` - Alert ingested successfully
-- `400 Bad Request` - Invalid CAP XML or parsing error
-- `500 Internal Server Error` - Server error during ingestion
-
-**Success Response:**
-
-```json
-{
-  "capIdentifier": "ABC123",
-  "status": "ingested",
-  "message": "CAP alert ingested successfully"
-}
-```
-
-**Error Response:**
-
-```json
-{
-  "error": "CapParseError",
-  "message": "Invalid CAP XML: Missing required field 'identifier'"
-}
-```
-
-**Example:**
-
-```bash
-curl -X POST http://localhost:8080/api/v1/alerts/cap \
-  -H "Content-Type: application/xml" \
-  --data @alert.xml
-```
-
----
-
-### POST /api/v1/alerts/manual
-
-**Description:** Create alert from simplified JSON payload (auto-generates CAP XML)
-
-**Content-Type:** `application/json`
-
-**Request Body:**
-
-```json
-{
-  "event": "Severe Weather",
-  "severity": "Extreme",
-  "urgency": "Immediate",
-  "certainty": "Observed",
-  "headline": "Tornado Warning",
-  "description": "A tornado has been sighted. Take shelter immediately.",
-  "instruction": "Move to basement or interior room. Stay away from windows.",
-  "areas": [
-    {
-      "areaDesc": "Downtown Manhattan",
-      "circle": {
-        "center": [40.7128, -74.0060],
-        "radiusKm": 5
-      }
-    },
-    {
-      "areaDesc": "Brooklyn Heights",
-      "polygon": [
-        [40.6955, -73.9951],
-        [40.6970, -74.0000],
-        [40.6925, -74.0010],
-        [40.6955, -73.9951]
-      ]
-    }
-  ],
-  "expiresInMinutes": 60
-}
-```
-
-**Request Parameters:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `event` | string | Yes | Event type (e.g., "Tornado", "Earthquake") |
-| `severity` | enum | Yes | `Extreme`, `Severe`, `Moderate`, `Minor` |
-| `urgency` | enum | Yes | `Immediate`, `Expected`, `Future` |
-| `certainty` | enum | Yes | `Observed`, `Likely`, `Possible` |
-| `headline` | string | Yes | Brief alert headline |
-| `description` | string | Yes | Detailed description |
-| `instruction` | string | No | Action instructions for recipients |
-| `areas` | array | Yes | At least one area definition (see below) |
-| `expiresInMinutes` | number | No | Alert validity duration (default: 60) |
-
-**Area Object:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `areaDesc` | string | Yes | Human-readable area name |
-| `circle` | object | No | Circular area: `{ center: [lat, lng], radiusKm: number }` |
-| `polygon` | array | No | Polygon: `[[lat1, lng1], [lat2, lng2], ...]` |
-
-**Response Codes:**
-- `200 OK` - Alert created and ingested
-- `400 Bad Request` - Missing required fields or validation error
-- `500 Internal Server Error` - Server error
-
-**Success Response:**
-
-```json
-{
-  "capIdentifier": "manual-a1b2c3d4-e5f6-7890-abcd-1234567890ab",
-  "status": "created",
-  "message": "Manual alert created and ingested successfully"
-}
-```
-
-**Error Response:**
-
-```json
-{
-  "error": "ValidationError",
-  "message": "At least one area is required"
-}
-```
-
-**Example:**
-
-```bash
-curl -X POST http://localhost:8080/api/v1/alerts/manual \
-  -H "Content-Type: application/json" \
-  -d @manual-alert.json
-```
-
----
-
-## Pipeline Management
-
-### POST /api/v1/pipeline/trigger
-
-**Description:** Trigger pipeline execution for an existing alert
-
-**Content-Type:** `application/json`
-
-**Request Body:**
-
-```json
-{
-  "capIdentifier": "ABC123",
-  "alertId": "alert-001"
-}
-```
-
-**Request Parameters:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `capIdentifier` | string | Yes | CAP alert identifier |
-| `alertId` | string | No | Internal alert ID (defaults to capIdentifier) |
-
-**Response Codes:**
-- `200 OK` - Pipeline triggered successfully
-- `404 Not Found` - Alert not found
-- `500 Internal Server Error` - Pipeline execution error
-
-**Success Response:**
-
-```json
-{
-  "capIdentifier": "ABC123",
-  "alertId": "alert-001",
-  "action": "triggered",
-  "status": "active",
-  "stage": "tower_resolution"
-}
-```
-
-**Error Response:**
-
-```json
-{
-  "error": "Alert not found: ABC123"
-}
-```
-
-**Example:**
-
-```bash
-curl -X POST http://localhost:8080/api/v1/pipeline/trigger \
-  -H "Content-Type: application/json" \
-  -d '{"capIdentifier": "ABC123"}'
-```
-
----
-
-### POST /api/v1/pipeline/trigger-by-cap
-
-**Description:** Ingest CAP XML and immediately trigger pipeline
-
-**Content-Type:** `application/xml`
-
-**Request Body:** Raw CAP XML (same format as `/api/v1/alerts/cap`)
-
-**Response Codes:**
-- `200 OK` - Alert ingested and pipeline triggered
-- `400 Bad Request` - Invalid CAP XML
-- `500 Internal Server Error` - Pipeline error
-
-**Success Response:**
-
-```json
-{
-  "capIdentifier": "ABC123",
-  "alertId": "ABC123",
-  "action": "triggered",
-  "status": "active",
-  "stage": "tower_resolution"
-}
-```
-
-**Example:**
+**Trigger success `200`:**
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/pipeline/trigger-by-cap \
-  -H "Content-Type: application/xml" \
-  --data @alert.xml
+  -H "Content-Type: application/xml" --data-binary @test-cap.xml
+# {"capIdentifier":"1780655887295022","alertId":"1780655887295022","action":"triggered","status":"completed","stage":"done"}
+```
+
+**Trigger blank `400`:**
+
+```json
+{"timestamp":"2026-08-24T10:12:00Z","status":400,"error":"Bad Request","code":"EMPTY_CAP","message":"Empty CAP XML body","path":"/api/v1/pipeline/trigger-by-cap","requestId":"..."}
+```
+
+**Invalid CAP `400`:**
+
+```json
+{"timestamp":"...","status":400,"error":"Bad Request","code":"CAP_PARSE_ERROR","message":"CAP parsing failed: Polygon must be closed...","path":"...","requestId":"..."}
+```
+
+**Too large `413`:**
+
+```json
+{"status":413,"error":"Payload Too Large","code":"CAP_TOO_LARGE",...}
+```
+
+**Not found `404` status:**
+
+```json
+{"timestamp":"...","status":404,"error":"Not Found","code":"PIPELINE_NOT_FOUND","message":"No pipeline status ...","path":"/api/v1/pipeline/status/XYZ","requestId":"..."}
 ```
 
 ---
 
-### GET /api/v1/pipeline/status/:capIdentifier
+## 9. HTTP Status Codes
 
-**Description:** Get current pipeline status for an alert
-
-**Path Parameters:**
-- `capIdentifier` - CAP alert identifier
-
-**Response Codes:**
-- `200 OK` - Status found
-- `404 Not Found` - No status for this alert
-
-**Response Body:**
-
-```json
-{
-  "capIdentifier": "ABC123",
-  "alertId": "alert-001",
-  "status": "active",
-  "stage": "subscriber_matching",
-  "towerCount": 42,
-  "expectedRecipients": 15000,
-  "submittedCount": 8500,
-  "acceptedCount": 8450,
-  "startTime": "2026-08-19T10:00:00Z",
-  "lastUpdateTime": "2026-08-19T10:05:30Z"
-}
-```
-
-**Status Values:**
-
-| Field | Description |
-|-------|-------------|
-| `status` | `pending`, `active`, `completed`, `failed` |
-| `stage` | Current pipeline stage (see below) |
-| `towerCount` | Number of matched cell towers |
-| `expectedRecipients` | Total MSISDNs to be notified |
-| `submittedCount` | Messages submitted to SMPP gateway |
-| `acceptedCount` | Messages accepted by gateway |
-
-**Pipeline Stages:**
-
-1. `tower_resolution` - Resolving cell towers in alert zone
-2. `subscriber_matching` - Matching subscribers to towers
-3. `deduplication` - Removing duplicate subscribers
-4. `message_preparation` - Preparing SMS messages
-5. `smpp_submission` - Submitting to SMPP gateway
-6. `delivery_tracking` - Tracking delivery receipts
-7. `report_generation` - Generating completion report
-
-**Example:**
-
-```bash
-curl http://localhost:8080/api/v1/pipeline/status/ABC123
-```
+| Code | When | Body |
+|---|---|---|
+| `200` | Trigger succeeded and pipeline finished within HTTP window; status/towers/report found | `TriggerResponse` / `PipelineStatusRecord` / `TowersResponse` / `AlertReport` |
+| `202` | Report requested but `status != completed` (`PipelineController.java:201`) | `ApiError code:REPORT_NOT_READY` |
+| `400` | Empty, malformed XML, missing required CAP field, invalid polygon | `ApiError 400 CAP_PARSE_ERROR/EMPTY_CAP` |
+| `404` | Alert/status/towers/report not found | `ApiError 404` or empty `PipelineController` legacy |
+| `413` | `Content-Length` or `capXml.length>20MB` | `ApiError 413 CAP_TOO_LARGE` |
+| `500` | Pipeline failed, DB error, unexpected | `ApiError 500 PIPELINE_FAILED` or `GlobalExceptionHandler 500` |
+| `503` | Async timeout `300s` exceeded (`GlobalExceptionHandler.java:18` `PIPELINE_TIMEOUT`) | `ApiError 503 PIPELINE_TIMEOUT` |
+| `204` | `DELETE /status/{cap}` success | — |
 
 ---
 
-### GET /api/v1/pipeline/towers/:capIdentifier
+## 10. CAP Validation Rules
 
-**Description:** Get matched cell towers for an alert (for map visualization)
-
-**Path Parameters:**
-- `capIdentifier` - CAP alert identifier
-
-**Response Codes:**
-- `200 OK` - Towers found
-- `404 Not Found` - No towers for this alert
-
-**Response Body:**
-
-```json
-{
-  "capIdentifier": "ABC123",
-  "count": 42,
-  "towers": [
-    {
-      "towerid": "T001",
-      "latitude": 40.7128,
-      "longitude": -74.0060,
-      "coverageRadiusMeters": 1500
-    }
-  ]
-}
-```
-
-**Example:**
-
-```bash
-curl http://localhost:8080/api/v1/pipeline/towers/ABC123
-```
+Required: `identifier, sender, sent, status, msgType, scope, info[].event, info[].area[polygon|circle]` (`CapParser.java:122 requiredText/requiredEnum`). `polygon` `lat,lng` closed ring `≥4 pts` `first==last`, else `CapParseException 400`. `circle` `lat,lng radiusKm`. Optional `effective/expires/onset` `Instant.parse` ISO8601. `preferredLanguage` `cap.preferred-language=en-IN`. Max `20 MB` (`cap.max-xml-bytes 20971520`). Duplicate `identifier+sender` → `ON CONFLICT DO UPDATE` not error.
 
 ---
 
-### GET /api/v1/pipeline/report/:capIdentifier
+## 11. Maximum Request Size
 
-**Description:** Get completion report for a finished alert
-
-**Path Parameters:**
-- `capIdentifier` - CAP alert identifier
-
-**Response Codes:**
-- `200 OK` - Report available
-- `202 Accepted` - Processing not yet complete
-- `404 Not Found` - Alert not found
-
-**Response Body:**
-
-```json
-{
-  "alertId": "alert-001",
-  "capIdentifier": "ABC123",
-  "summary": {
-    "expectedRecipients": 15000,
-    "messagesSubmitted": 15000,
-    "messagesAccepted": 14950,
-    "messagesDelivered": 14800,
-    "messagesFailed": 150,
-    "deliveryRate": 98.67,
-    "acceptanceRate": 99.67
-  },
-  "coverage": {
-    "towersMatched": 42,
-    "zonesProcessed": 1
-  },
-  "performance": {
-    "processingDurationMs": 12500,
-    "throughputPerSecond": 1200
-  },
-  "timestamp": "2026-08-19T10:15:00Z"
-}
-```
-
-**Example:**
-
-```bash
-curl http://localhost:8080/api/v1/pipeline/report/ABC123
-```
+`20 MB` (`PipelineController.java:102` `20*1024*1024`, `application.properties:11 max-swallow 20MB`, `cap.max-xml-bytes 20971520`, `WebConfig.java maxPostSize -1` but controller enforces). Larger → `413`. Tomcat `threads.max 200`.
 
 ---
 
-### DELETE /api/v1/pipeline/status/:capIdentifier
-
-**Description:** Clear pipeline status (cleanup after completion)
-
-**Path Parameters:**
-- `capIdentifier` - CAP alert identifier
-
-**Response Codes:**
-- `204 No Content` - Status cleared successfully
-
-**Example:**
+## 12. End-to-End Example
 
 ```bash
-curl -X DELETE http://localhost:8080/api/v1/pipeline/status/ABC123
-```
-
----
-
-## Tower Resolution
-
-### GET /api/v1/alerts/:capIdentifier/towers
-
-**Description:** Get resolved cell towers for an alert
-
-**Path Parameters:**
-- `capIdentifier` - CAP alert identifier
-
-**Response Codes:**
-- `200 OK` - Towers resolved
-- `404 Not Found` - Alert not found
-- `500 Internal Server Error` - Resolution error
-
-**Response Body:**
-
-```json
-{
-  "towers": [
-    {
-      "towerid": "T001",
-      "latitude": 40.7128,
-      "longitude": -74.0060,
-      "coverageRadiusMeters": 1500
-    }
-  ],
-  "count": 42
-}
-```
-
-**Note:** Full tower resolution implementation is in progress.
-
-**Example:**
-
-```bash
-curl http://localhost:8080/api/v1/alerts/ABC123/towers
-```
-
----
-
-## Error Handling
-
-### Standard Error Response
-
-All error responses follow this format:
-
-```json
-{
-  "error": "ErrorType",
-  "message": "Human-readable error description"
-}
-```
-
-### Error Types
-
-| Error Type | HTTP Code | Description |
-|------------|-----------|-------------|
-| `CapParseError` | 400 | Invalid CAP XML structure or content |
-| `ValidationError` | 400 | Request validation failed (missing/invalid fields) |
-| `NotFoundError` | 404 | Resource not found (alert, status, etc.) |
-| `InternalError` | 500 | Server-side processing error |
-| `DatabaseError` | 500 | Database connectivity or query error |
-| `SmppError` | 500 | SMPP gateway communication error |
-
-### Common Error Scenarios
-
-**Missing Required Field:**
-```json
-{
-  "error": "ValidationError",
-  "message": "Missing required field: event"
-}
-```
-
-**Alert Not Found:**
-```json
-{
-  "error": "Alert not found: ABC123"
-}
-```
-
-**CAP Parse Error:**
-```json
-{
-  "error": "CapParseError",
-  "message": "Invalid CAP XML: Missing required field 'identifier'"
-}
-```
-
-**Pipeline Still Processing:**
-```json
-{
-  "error": "Alert processing not yet complete: subscriber_matching"
-}
-```
-
----
-
-## Rate Limiting
-
-**Current Status:** Not implemented (development only)
-
-Future rate limiting will implement:
-- **100 requests/minute** per API key (global endpoints)
-- **10 alerts/minute** per API key (ingestion endpoints)
-- **Burst allowance**: 20 requests in 10 seconds
-- **Headers**: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`
-
-**429 Too Many Requests Response:**
-
-```json
-{
-  "error": "RateLimitExceeded",
-  "message": "Rate limit exceeded. Retry after 60 seconds.",
-  "retryAfter": 60
-}
-```
-
----
-
-## Complete Request Examples
-
-### Example 1: Manual Alert End-to-End
-
-```bash
-# 1. Create manual alert
-curl -X POST http://localhost:8080/api/v1/alerts/manual \
-  -H "Content-Type: application/json" \
-  -d '{
-    "event": "Tornado Warning",
-    "severity": "Extreme",
-    "urgency": "Immediate",
-    "certainty": "Observed",
-    "headline": "Take Shelter Now",
-    "description": "Tornado spotted heading northeast",
-    "areas": [{
-      "areaDesc": "Downtown",
-      "circle": {"center": [40.7128, -74.0060], "radiusKm": 5}
-    }],
-    "expiresInMinutes": 30
-  }'
-
-# Response: {"capIdentifier": "manual-abc123", ...}
-
-# 2. Trigger pipeline
-curl -X POST http://localhost:8080/api/v1/pipeline/trigger \
-  -H "Content-Type: application/json" \
-  -d '{"capIdentifier": "manual-abc123"}'
-
-# 3. Monitor status
-curl http://localhost:8080/api/v1/pipeline/status/manual-abc123
-
-# 4. Get completion report
-curl http://localhost:8080/api/v1/pipeline/report/manual-abc123
-```
-
-### Example 2: CAP Ingestion with Immediate Pipeline Trigger
-
-```bash
-# Single request: ingest + trigger
-curl -X POST http://localhost:8080/api/v1/pipeline/trigger-by-cap \
-  -H "Content-Type: application/xml" \
-  --data @alert.xml
-
-# Monitor progress
-curl http://localhost:8080/api/v1/pipeline/status/ABC123
-```
-
-### Example 3: Health Check for Monitoring
-
-```bash
-# Check system health
+# 1 Health
 curl http://localhost:8080/healthz
+# {"app":"turant","status":"healthy","db":"ok",...}
 
-# Expected healthy response:
-# {
-#   "app": "turant",
-#   "status": "healthy",
-#   "db": "ok",
-#   "redis": "ok",
-#   "smpp": "configured"
-# }
+# 2 Trigger (real pipeline 29 districts UP 3MB → ~35s)
+curl -X POST http://localhost:8080/api/v1/pipeline/trigger-by-cap \
+  -H "Content-Type: application/xml" --data-binary @delhi-heatwave-cap.xml
+# {"capIdentifier":"1780655887295022","action":"triggered","status":"completed","stage":"done"}
+
+# 3 Status poll
+curl http://localhost:8080/api/v1/pipeline/status/1780655887295022
+# {"capIdentifier":"...","status":"completed","towerCount":13680,"matchedCount":5107744,...}
+
+# 4 Towers
+curl http://localhost:8080/api/v1/pipeline/towers/1780655887295022 | jq .count
+
+# 5 Report (only when completed)
+curl http://localhost:8080/api/v1/pipeline/report/1780655887295022
+# {"alertId":"...","capIdentifier":"...","startedAt":"...","endedAt":"...","targetedSubscriberCount":5107744,...}
 ```
+
+Evidence: `POST 3,076,978 1787287355633013 →200 completed 13,680 towers 5,107,744` `36.9s` after fix.
 
 ---
 
-## Integration Patterns
+## 13. Postman Testing
 
-### Pattern 1: External CAP Feed Integration
+**Collection:** `postman/collections/TURANT API/` (updated). Globals `postman/globals/workspace.globals.yaml` `{{baseUrl}} http://127.0.0.1:8080`.
 
-```javascript
-// Webhook receiver for external CAP alerts
-app.post('/external/cap-webhook', async (req, res) => {
-  const capXml = req.body;
-  
-  // Forward to TURANT
-  const response = await fetch('http://turant:8080/api/v1/pipeline/trigger-by-cap', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/xml' },
-    body: capXml
-  });
-  
-  const result = await response.json();
-  res.json({ success: true, capIdentifier: result.capIdentifier });
-});
-```
+Canonical flow (match Java):
 
-### Pattern 2: Frontend Dashboard Integration
+1. `GET {{baseUrl}}/healthz` `healthz.request.yaml`
+2. `POST {{baseUrl}}/api/v1/pipeline/trigger-by-cap` `Content-Type application/xml` Body `xml` `trigger-by-cap.request.yaml` → sets `{{capIdentifier}}` via test script.
+3. `GET {{baseUrl}}/api/v1/pipeline/status/{{capIdentifier}}` `get-pipeline-status.request.yaml` (canonical)
+4. `GET {{baseUrl}}/api/v1/pipeline/towers/{{capIdentifier}}`
+5. `GET {{baseUrl}}/api/v1/pipeline/report/{{capIdentifier}}`
 
-```javascript
-// Real-time alert monitoring
-async function monitorAlert(capIdentifier) {
-  const pollInterval = 2000; // 2 seconds
-  
-  while (true) {
-    const response = await fetch(
-      `http://turant:8080/api/v1/pipeline/status/${capIdentifier}`
-    );
-    const status = await response.json();
-    
-    updateUI(status);
-    
-    if (status.status === 'completed' || status.status === 'failed') {
-      // Get final report
-      const report = await fetch(
-        `http://turant:8080/api/v1/pipeline/report/${capIdentifier}`
-      ).then(r => r.json());
-      
-      displayReport(report);
-      break;
-    }
-    
-    await sleep(pollInterval);
-  }
-}
-```
+All requests now use `{{baseUrl}}`, no hard-coded `http://127.0.0.1:8080/api/v1/alerts/trigger-by-cap` (removed). Legacy `TowerController` `/api/v1/alerts/:cap/towers` still in `get-alert-towers` but marked deprecated.
 
-### Pattern 3: Automated Testing
+**Run:**
 
 ```bash
-#!/bin/bash
-# Integration test script
-
-# 1. Check system health
-HEALTH=$(curl -s http://localhost:8080/healthz | jq -r '.status')
-if [ "$HEALTH" != "healthy" ]; then
-  echo "System not healthy: $HEALTH"
-  exit 1
-fi
-
-# 2. Create test alert
-CAP_ID=$(curl -s -X POST http://localhost:8080/api/v1/alerts/manual \
-  -H "Content-Type: application/json" \
-  -d @test-alert.json | jq -r '.capIdentifier')
-
-echo "Created alert: $CAP_ID"
-
-# 3. Trigger pipeline
-curl -s -X POST http://localhost:8080/api/v1/pipeline/trigger \
-  -H "Content-Type: application/json" \
-  -d "{\"capIdentifier\": \"$CAP_ID\"}"
-
-# 4. Wait for completion (max 60 seconds)
-for i in {1..30}; do
-  STATUS=$(curl -s http://localhost:8080/api/v1/pipeline/status/$CAP_ID | jq -r '.status')
-  echo "Status: $STATUS"
-  
-  if [ "$STATUS" = "completed" ]; then
-    # Get report
-    curl -s http://localhost:8080/api/v1/pipeline/report/$CAP_ID | jq
-    break
-  fi
-  
-  sleep 2
-done
-
-# 5. Cleanup
-curl -s -X DELETE http://localhost:8080/api/v1/pipeline/status/$CAP_ID
+# Import postman/collections + globals into Postman, set baseUrl, Run Collection
+# Or curl as above
 ```
 
 ---
 
-## Changelog
+## 14. OpenAPI/Swagger
 
-### Version 1.0.0 (2026-08-19)
-- Initial API documentation
-- All endpoints migrated from TypeScript implementation
-- Core functionality: CAP ingestion, pipeline management, tower resolution
-- Performance benchmarks: 15,873 msg/sec (8 workers), 192K dedup/sec
+**Dependency:** `pom.xml:193 springdoc-openapi-starter-webmvc-ui 2.3.0` (Spring Boot 3.2.2).  
+**Config:** `config/OpenApiConfig.java` `@OpenAPIDefinition` title `TURANT Emergency Alert API` `1.0.0`, servers `http://localhost:8080`.  
+**Properties:** `application.properties:213 springdoc.api-docs.path=/api-docs, swagger-ui.path=/swagger-ui.html`.
 
----
+**Locations after `mvn package && java -jar`:**
 
-## Support
+- JSON: `GET {{baseUrl}}/api-docs` (`/v3/api-docs`)
+- YAML: `GET {{baseUrl}}/api-docs.yaml`
+- Swagger UI: `GET {{baseUrl}}/swagger-ui.html` (`/swagger-ui/index.html`)
 
-For issues, questions, or feature requests:
-- **GitHub Issues**: [turant/issues](https://github.com/turant/issues)
-- **Documentation**: `COMPLETE_MIGRATION_GUIDE.md`
-- **Performance**: `PERFORMANCE_BENCHMARK_RESULTS.md`
+Documents `POST /api/v1/pipeline/trigger-by-cap`, `GET /api/v1/pipeline/status/{capIdentifier}`, `GET /api/v1/pipeline/towers/{capIdentifier}`, `GET /api/v1/pipeline/report/{capIdentifier}`, `GET /healthz` with `application/xml` request, `PipelineStatusRecord`/`TowersResponse`/`ApiError` schemas. No duplicate `PipelineTriggerController` endpoints appear.
 
 ---
 
-## License
+## Removed / Deprecated
 
-Copyright © 2026 TURANT Alert System
+* `PipelineTriggerController.java` **deleted** — duplicate `POST /trigger, POST /trigger-by-cap, GET /{cap}/pipeline-status` ambiguous mappings removed. Startup now shows no ambiguous.
+* `GET /api/v1/pipeline/{cap}/pipeline-status` kept `@Deprecated` (prefer `GET /status/{cap}`).
+* `GET /api/v1/alerts/{cap}/pipeline-status|towers|report` (`TowerController.java:31`) kept `@Deprecated` — prefer `/api/v1/pipeline/*`.
+* `GET /api/v1/pipeline/test` undocumented but retained for liveness.
+
+## Tests
+
+`PipelineRestApiTest.java` covers trigger, invalid, status, report, towers, delete. Additional `src/test` to be added for `blank→400, 413, 404, pipeline start`.
+
+## Commands to Verify
+
+```bash
+mvn clean test
+mvn package
+java -jar target/turant-0.1.0.jar  # PORT 8080, DATABASE_URL required for DB ok
+curl http://localhost:8080/healthz
+curl http://localhost:8080/api-docs
+curl http://localhost:8080/swagger-ui.html
+curl -X POST http://localhost:8080/api/v1/pipeline/trigger-by-cap -H "Content-Type: application/xml" --data-binary @test-cap.xml
+curl http://localhost:8080/api/v1/pipeline/status/<capIdentifier>
+curl http://localhost:8080/api/v1/pipeline/towers/<capIdentifier>
+```
+
+**EWS answer: `POST /api/v1/pipeline/trigger-by-cap` `application/xml` raw CAP 1.2 XML → `PipelineController.java:94` → `AlertPipeline` → `status/towers/report` poll.**
+

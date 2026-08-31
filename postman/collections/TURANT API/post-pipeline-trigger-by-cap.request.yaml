@@ -1,0 +1,52 @@
+$kind: http-request
+name: 'POST pipeline trigger-by-cap (CANONICAL EWS)'
+method: POST
+url: '{{baseUrl}}/api/v1/pipeline/trigger-by-cap'
+order: 2500
+headers:
+  - key: Content-Type
+    value: application/xml
+  - key: Accept
+    value: application/json
+  - key: X-API-KEY
+    value: '{{apiKey}}'
+body:
+  type: xml
+  content: |-
+    <alert xmlns="urn:oasis:names:tc:emergency:cap:1.2">
+      <identifier>{{capIdentifier}}</identifier>
+      <sender>ews@example.com</sender>
+      <sent>2026-08-24T10:00:00Z</sent>
+      <status>Actual</status>
+      <msgType>Alert</msgType>
+      <scope>Public</scope>
+      <info>
+        <language>en-IN</language>
+        <category>Met</category>
+        <event>Test Alert</event>
+        <urgency>Immediate</urgency>
+        <severity>Severe</severity>
+        <certainty>Observed</certainty>
+        <headline>EWS test alert</headline>
+        <description>End-to-end EWS integration test via canonical trigger.</description>
+        <area>
+          <areaDesc>Test Zone Delhi</areaDesc>
+          <polygon>28.55,77.15 28.55,77.27 28.63,77.30 28.68,77.27 28.68,77.15 28.63,77.12 28.55,77.15</polygon>
+        </area>
+      </info>
+    </alert>
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('Trigger status is 200', function () {
+        pm.expect(pm.response.code).to.eql(200);
+      });
+      const json = pm.response.json();
+      pm.test('Trigger response shape', function () {
+        pm.expect(json.capIdentifier).to.be.a('string').and.not.empty;
+        pm.expect(json.alertId).to.be.a('string');
+        pm.expect(json.action).to.eql('triggered');
+        pm.expect(json.status).to.be.oneOf(['completed','running','halted']);
+      });
+      if (json.capIdentifier) { pm.collectionVariables.set('capIdentifier', json.capIdentifier); pm.environment.set('capIdentifier', json.capIdentifier); }

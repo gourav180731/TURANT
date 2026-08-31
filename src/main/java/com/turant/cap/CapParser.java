@@ -55,6 +55,12 @@ public class CapParser {
             
             // Disable expand entity references
             documentBuilderFactory.setExpandEntityReferences(false);
+
+            // Additional hardening: limit entity expansion (billion laughs), block external access
+            try { documentBuilderFactory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, ""); } catch (Exception ignore) {}
+            try { documentBuilderFactory.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, ""); } catch (Exception ignore) {}
+            try { documentBuilderFactory.setAttribute("http://www.oracle.com/xml/jaxp/properties/entityExpansionLimit", "10000"); } catch (Exception ignore) {}
+            try { documentBuilderFactory.setAttribute("http://www.oracle.com/xml/jaxp/properties/totalEntitySizeLimit", "50000"); } catch (Exception ignore) {}
             
             logger.info("CAP XML parser initialized with XXE protection");
             
@@ -76,6 +82,9 @@ public class CapParser {
         String trimmed = xml.trim();
         if (trimmed.isEmpty()) {
             throw new CapParseException("Empty CAP XML document");
+        }
+        if (trimmed.length() > 20 * 1024 * 1024) {
+            throw new CapParseException("CAP XML exceeds 20 MB limit: " + trimmed.length());
         }
         
         try {

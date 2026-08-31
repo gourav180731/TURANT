@@ -1,8 +1,11 @@
 $kind: http-request
-name: 'GET delivery report'
+name: 'GET pipeline report (CANONICAL)'
 method: GET
-url: '{{baseUrl}}/api/v1/alerts/:capIdentifier/report'
+url: '{{baseUrl}}/api/v1/pipeline/report/:capIdentifier'
 order: 8000
+headers:
+  - key: X-API-KEY
+    value: '{{apiKey}}'
 pathVariables:
   - key: capIdentifier
     value: '{{capIdentifier}}'

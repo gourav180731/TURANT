@@ -1,8 +1,11 @@
 $kind: http-request
-name: 'GET pipeline status'
+name: 'GET pipeline status (CANONICAL)'
 method: GET
-url: '{{baseUrl}}/api/v1/alerts/:capIdentifier/pipeline-status'
+url: '{{baseUrl}}/api/v1/pipeline/status/:capIdentifier'
 order: 4000
+headers:
+  - key: X-API-KEY
+    value: '{{apiKey}}'
 pathVariables:
   - key: capIdentifier
     value: '{{capIdentifier}}'
@@ -18,13 +21,16 @@ scripts:
 
       if (pm.response.code === 200) {
         pm.test('Pipeline status shape is valid', function () {
+          pm.expect(json.capIdentifier).to.be.a('string');
           pm.expect(json.status).to.be.a('string');
-          pm.expect(json.traceRef).to.be.a('string').and.include('/api/v1/traces/');
+          pm.expect(json.stage).to.be.a('string');
+          pm.expect(json.towerCount).to.be.a('number');
+          pm.expect(json.matchedCount).to.be.a('number');
         });
 
         if (json.status === 'completed') {
-          pm.test('Completed pipeline has final stage', function () {
-            pm.expect(json.stage).to.exist;
+          pm.test('Completed pipeline has expectedRecipients', function () {
+            pm.expect(json.expectedRecipients).to.be.a('number');
           });
         }
 
