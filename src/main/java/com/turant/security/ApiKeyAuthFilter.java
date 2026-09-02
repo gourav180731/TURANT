@@ -8,6 +8,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -19,10 +20,8 @@ import java.util.Set;
 
 /**
  * Item #2 Security — API Key authentication for EWS.
- * Canonical EWS endpoint: POST /api/v1/pipeline/trigger-by-cap
- * Supports headers: X-API-KEY, X-EWS-API-KEY, Authorization: Bearer <key>
- * No hardcoded secrets — value from env EWS_API_KEY / turant.security.api-key.
- * When apiKey is blank/disabled, filter is pass-through (dev).
+ * Supports per-client DB lookup (client_credentials) + fallback to single EWS_API_KEY env.
+ * Also allows mTLS alternative when mTLS is valid.
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 10)
@@ -31,6 +30,8 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
     private static final Logger log = LoggerFactory.getLogger(ApiKeyAuthFilter.class);
 
     private final String expectedApiKey;
+    private final MtlsIdentityService mtlsIdentityService;
+    private final ClientCredentialsService clientCredentialsService;
     private final Set<String> protectedPrefixes = Set.of("/api/v1/pipeline/", "/api/v1/alerts/");
     private final Set<String> publicExact = Set.of("/healthz", "/api-docs", "/api-docs.yaml", "/swagger-ui.html");
     private final Set<String> publicPrefixes = Set.of("/swagger-ui/", "/v3/api-docs", "/api-docs/");
@@ -38,27 +39,28 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public ApiKeyAuthFilter(@Value("${turant.security.api-key:}") String apiKey,
-                            @Value("${EWS_API_KEY:}") String ewsApiKey) {
-        // EWS_API_KEY env takes precedence, else turant.security.api-key
+                            @Value("${EWS_API_KEY:}") String ewsApiKey,
+                            @Autowired(required = false) MtlsIdentityService mtlsIdentityService,
+                            @Autowired(required = false) ClientCredentialsService clientCredentialsService) {
         String v = (ewsApiKey != null && !ewsApiKey.isBlank()) ? ewsApiKey.trim() : (apiKey != null ? apiKey.trim() : "");
         this.expectedApiKey = v;
+        this.mtlsIdentityService = mtlsIdentityService;
+        this.clientCredentialsService = clientCredentialsService;
         if (v == null || v.isBlank() || "disabled".equalsIgnoreCase(v)) {
-            log.warn("ApiKeyAuthFilter: No API key configured (turant.security.api-key / EWS_API_KEY empty) — filter is PASS-THROUGH (dev). Set EWS_API_KEY in production!");
+            log.warn("ApiKeyAuthFilter: No API key configured — filter is PASS-THROUGH (dev) unless mTLS required. Set EWS_API_KEY in production!");
         } else {
-            log.info("ApiKeyAuthFilter: API key authentication ENABLED for {} protected prefixes", protectedPrefixes);
+            log.info("ApiKeyAuthFilter: API key authentication ENABLED for {} (mTLS alternative allowed, per-client DB lookup enabled)", protectedPrefixes);
         }
     }
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getRequestURI();
-        // Public exact
         if (publicExact.contains(path)) return true;
         for (String p : publicPrefixes) if (path.startsWith(p)) return true;
-        // Not protected → public (e.g., /api/v1/sim/clusters in dev)
         boolean protectedPath = protectedPrefixes.stream().anyMatch(path::startsWith);
         if (!protectedPath) return true;
-        // If no key configured, allow all (dev)
+        if (mtlsIdentityService != null && mtlsIdentityService.isMtlsRequired()) return false;
         if (expectedApiKey == null || expectedApiKey.isBlank() || "disabled".equalsIgnoreCase(expectedApiKey)) return true;
         return false;
     }
@@ -67,24 +69,64 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
         String path = request.getRequestURI();
-        // Already filtered public, but double-check
         boolean isProtected = protectedPrefixes.stream().anyMatch(path::startsWith);
         if (!isProtected) {
             chain.doFilter(request, response);
             return;
         }
+        // If mTLS required, let Mtls filter handle — don't fallback to API key
+        if (mtlsIdentityService != null && mtlsIdentityService.isMtlsRequired()) {
+            chain.doFilter(request, response);
+            return;
+        }
         if (expectedApiKey == null || expectedApiKey.isBlank() || "disabled".equalsIgnoreCase(expectedApiKey)) {
+            // No single key configured — try per-client DB lookup if available
+            String provided = extractApiKey(request);
+            if (provided != null && !provided.isBlank() && clientCredentialsService != null) {
+                var rec = clientCredentialsService.findByApiKey(provided);
+                if (rec != null) {
+                    request.setAttribute("turant.clientId", rec.clientId());
+                    request.setAttribute("turant.clientRecord", rec);
+                    chain.doFilter(request, response);
+                    return;
+                }
+            }
             chain.doFilter(request, response);
             return;
         }
 
         String provided = extractApiKey(request);
         if (provided == null || provided.isBlank()) {
+            if (mtlsIdentityService != null && mtlsIdentityService.extractIdentity(request).isPresent()) {
+                chain.doFilter(request, response);
+                return;
+            }
             log.warn("Missing API key for {} from {}", path, request.getRemoteAddr());
             writeUnauthorized(request, response, "Missing API key. Send X-API-KEY or Authorization: Bearer <key>");
             return;
         }
-        if (!constantTimeEquals(expectedApiKey, provided)) {
+        // Check per-client DB first, then fallback to single expected key
+        boolean valid = false;
+        String clientId = null;
+        if (clientCredentialsService != null) {
+            var rec = clientCredentialsService.findByApiKey(provided);
+            if (rec != null) {
+                valid = true;
+                clientId = rec.clientId();
+                request.setAttribute("turant.clientId", clientId);
+                request.setAttribute("turant.clientRecord", rec);
+            }
+        }
+        if (!valid && constantTimeEquals(expectedApiKey, provided)) {
+            valid = true;
+            clientId = "tsp-a";
+            request.setAttribute("turant.clientId", clientId);
+        }
+        if (!valid) {
+            if (mtlsIdentityService != null && mtlsIdentityService.extractIdentity(request).isPresent()) {
+                chain.doFilter(request, response);
+                return;
+            }
             log.warn("Invalid API key for {} from {}", path, request.getRemoteAddr());
             writeUnauthorized(request, response, "Invalid API key");
             return;

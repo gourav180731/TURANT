@@ -70,3 +70,5 @@ frontend/node_modules/
 .diag-*.log
 .diag-*.err
 *.log
+data/
+temp_*

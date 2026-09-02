@@ -29,7 +29,10 @@ class CanonicalEwsApiTest {
     @Autowired private PipelineStatusStore statusStore;
     @Autowired private CapIngestionService capService;
 
-    private static String validCapXml() { return TestDataFixtures.createSampleCapXml(); }
+    private static String validCapXml() {
+        String id = "earthquake-delhi-" + java.util.UUID.randomUUID();
+        return TestDataFixtures.createSampleCapXml().replace("earthquake-delhi-001", id);
+    }
 
     @Test
     void test1_validCap_successfulTrigger() throws Exception {
@@ -90,7 +93,7 @@ class CanonicalEwsApiTest {
 
     @Test
     void test5_validTrigger_pipelineActuallyStarts() throws Exception {
-        String capXml = TestDataFixtures.createSampleCapXml();
+        String capXml = validCapXml();
         String capId = capService.ingestCap(capXml).join().identifier();
         MvcResult async = mockMvc.perform(post("/api/v1/pipeline/trigger-by-cap")
                         .contentType(MediaType.APPLICATION_XML)

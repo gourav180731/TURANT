@@ -31,9 +31,14 @@ class ApiKeyAuthTest {
     private static final String VALID_KEY = "test-key-12345";
     private static final String INVALID_KEY = "wrong-key";
 
+    private String createUniqueCapXml() {
+        String id = "alert-" + java.util.UUID.randomUUID();
+        return TestDataFixtures.createSampleCapXml().replace("earthquake-delhi-001", id);
+    }
+
     @Test
     void missingApiKey_401() throws Exception {
-        String capXml = TestDataFixtures.createSampleCapXml();
+        String capXml = createUniqueCapXml();
         mockMvc.perform(post("/api/v1/pipeline/trigger-by-cap")
                         .contentType(MediaType.APPLICATION_XML)
                         .content(capXml))
@@ -43,7 +48,7 @@ class ApiKeyAuthTest {
 
     @Test
     void invalidApiKey_401() throws Exception {
-        String capXml = TestDataFixtures.createSampleCapXml();
+        String capXml = createUniqueCapXml();
         mockMvc.perform(post("/api/v1/pipeline/trigger-by-cap")
                         .contentType(MediaType.APPLICATION_XML)
                         .header("X-API-KEY", INVALID_KEY)
@@ -54,7 +59,7 @@ class ApiKeyAuthTest {
 
     @Test
     void validApiKey_accepted() throws Exception {
-        String capXml = TestDataFixtures.createSampleCapXml();
+        String capXml = createUniqueCapXml();
         var async = mockMvc.perform(post("/api/v1/pipeline/trigger-by-cap")
                         .contentType(MediaType.APPLICATION_XML)
                         .header("X-API-KEY", VALID_KEY)
@@ -68,7 +73,7 @@ class ApiKeyAuthTest {
 
     @Test
     void validApiKey_pipelineActuallyStarts() throws Exception {
-        String capXml = TestDataFixtures.createSampleCapXml();
+        String capXml = createUniqueCapXml();
         var async = mockMvc.perform(post("/api/v1/pipeline/trigger-by-cap")
                         .contentType(MediaType.APPLICATION_XML)
                         .header("X-EWS-API-KEY", VALID_KEY)
@@ -80,7 +85,7 @@ class ApiKeyAuthTest {
                 .andReturn();
         String body = result.getResponse().getContentAsString();
         // Also works with Bearer
-        String capXml2 = TestDataFixtures.createSampleCapXml();
+        String capXml2 = createUniqueCapXml();
         var async2 = mockMvc.perform(post("/api/v1/pipeline/trigger-by-cap")
                         .contentType(MediaType.APPLICATION_XML)
                         .header("Authorization", "Bearer " + VALID_KEY)
@@ -88,6 +93,28 @@ class ApiKeyAuthTest {
                 .andExpect(request().asyncStarted())
                 .andReturn();
         mockMvc.perform(asyncDispatch(async2)).andExpect(status().isOk());
+    }
+
+    @Test
+    void replaySameCap_rejectedWithConflict() throws Exception {
+        String cap = createUniqueCapXml();
+        var a1 = mockMvc.perform(post("/api/v1/pipeline/trigger-by-cap")
+                        .contentType(MediaType.APPLICATION_XML)
+                        .header("X-API-KEY", VALID_KEY)
+                        .content(cap))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+        mockMvc.perform(asyncDispatch(a1)).andExpect(status().isOk());
+
+        var a2 = mockMvc.perform(post("/api/v1/pipeline/trigger-by-cap")
+                        .contentType(MediaType.APPLICATION_XML)
+                        .header("X-API-KEY", VALID_KEY)
+                        .content(cap))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+        mockMvc.perform(asyncDispatch(a2))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("REPLAY_DETECTED"));
     }
 
     @Test

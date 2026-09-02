@@ -23,9 +23,15 @@ public class CapController {
     private static final Logger logger = LoggerFactory.getLogger(CapController.class);
     
     private final CapIngestionService capIngestionService;
+    private final com.turant.security.SecurityService securityService;
+    private final com.turant.security.AuditService auditService;
     
-    public CapController(CapIngestionService capIngestionService) {
+    public CapController(CapIngestionService capIngestionService,
+                         @org.springframework.beans.factory.annotation.Autowired(required = false) com.turant.security.SecurityService securityService,
+                         @org.springframework.beans.factory.annotation.Autowired(required = false) com.turant.security.AuditService auditService) {
         this.capIngestionService = capIngestionService;
+        this.securityService = securityService;
+        this.auditService = auditService;
     }
     
     /**
@@ -41,7 +47,27 @@ public class CapController {
         consumes = { MediaType.APPLICATION_XML_VALUE, MediaType.TEXT_XML_VALUE, MediaType.TEXT_PLAIN_VALUE },
         produces = MediaType.APPLICATION_JSON_VALUE
     )
-    public ResponseEntity<?> ingestCapAlert(@RequestBody String capXml) {
+    public ResponseEntity<?> ingestCapAlert(@RequestBody String capXml, jakarta.servlet.http.HttpServletRequest httpReq) {
+        if (securityService != null) {
+            var sec = securityService.check(httpReq, capXml, null);
+            if (!sec.allowed()) {
+                if (auditService != null) {
+                    auditService.audit(new com.turant.security.AuditService.HttpContext(
+                            (String) httpReq.getAttribute("turant.requestId"),
+                            sec.clientId(),
+                            (String) httpReq.getAttribute("turant.certSubject"),
+                            httpReq.getRemoteAddr(),
+                            httpReq.getRequestURI(),
+                            httpReq.getMethod(),
+                            null
+                    ), com.turant.security.AuditService.AuditEvent.AUTHENTICATION_FAILURE, "DENIED", sec.message());
+                }
+                return ResponseEntity.status(sec.httpStatus()).body(Map.of(
+                        "error", sec.code(),
+                        "message", sec.message()
+                ));
+            }
+        }
         try {
             logger.info("Received CAP alert ingestion request");
             
