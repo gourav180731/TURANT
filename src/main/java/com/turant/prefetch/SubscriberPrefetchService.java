@@ -62,16 +62,10 @@ public class SubscriberPrefetchService {
         String fileName = String.format("vlr_%s_%s.csv.gz", technology, now.toString().replace(":","-"));
         Path file = storageDir.resolve(fileName);
         // Efficient storage: streaming COPY with tech filter, gzip on the fly
-        // Near real-time live retrieval is feasible via this same path with small delta (see liveProbe)
-        String sql = String.format("COPY (SELECT serving_cell_id, msisdn, imsi FROM %s WHERE technology='%s' AND serving_cell_id IS NOT NULL) TO STDOUT WITH CSV", dumpTable, technology);
-        // Fallback to JDBC streaming if COPY not available
         long rows = 0;
         try (OutputStream gz = new java.util.zip.GZIPOutputStream(Files.newOutputStream(file));
              PrintWriter pw = new PrintWriter(gz)) {
-            jdbc.query(sql, (rs) -> {
-                // COPY path needs psql; fallback is chunked SELECT
-            });
-            // Primary path: chunked SELECT streaming (works on any JDBC)
+            // Streaming chunked SELECT (portable across JDBC implementations)
             rows = streamTechToFile(technology, pw);
         }
         long bytes = Files.size(file);
