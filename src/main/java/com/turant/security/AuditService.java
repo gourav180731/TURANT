@@ -69,7 +69,7 @@ public class AuditService {
                 (id, timestamp, request_id, client_id, cert_subject, source_ip, endpoint, method, cap_id, event, result, reason, previous_hash, current_hash)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                    UUID.randomUUID().toString(), Instant.now(), requestId, ctx.clientId, ctx.certSubject,
+                    UUID.randomUUID().toString(), java.sql.Timestamp.from(Instant.now()), requestId, ctx.clientId, ctx.certSubject,
                     ctx.sourceIp, ctx.endpoint, ctx.method, ctx.capId, event != null ? event.name() : "UNKNOWN", result, reason, previousHash, currentHash);
             log.info("AUDIT {} requestId={} client={} cap={} result={}", event, requestId, ctx.clientId, ctx.capId, result);
         } catch (Exception e) {
