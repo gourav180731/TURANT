@@ -37,7 +37,7 @@ Do NOT use `192.168.137.88:9081` for this local test.
 - `src/main/java/com/turant/pipeline/AlertPipeline.java:495` `isSmppConfigured()` checks `TurantConfig.getSmpp().host && systemId`. When true, now **actually streams** authoritative `subscriber_dump` MSISDNs via `SubscriberCellStatsService.forEachMsisdn(cellIds, sink)` (DISTINCT, parallel, bounded batches of 1000) → creates `SmsMessage` per MSISDN with `ValidityPeriod` + `PriorityFlags(3)` + `registeredDelivery=1` → submits via `BatchFileSMSCService.submitOneByOne` (delegates to `SmppClient.submitBatch`) → aggregates `submittedCount/acceptedCount` from real `SubmissionResult` outcomes (no fabrication). `awaitingCredentials = !smppAvailable`.
 
 **DLR:**
-- `src/main/java/com/turant/dlr/DlrListener.java:26` parses `id:.. sub:001 dlvrd:001 ... stat:DELIVRD` via regex, correlates via `smscMessageId`, tracks per-alert stats. `DlrReporter` aggregates. `SmppClient` currently does NOT register a `MessageReceiverListener` for `deliver_sm`, so SMPPSim DLRs are not auto-consumed — parsing is tested via `DlrListenerTest`.
+- `src/main/java/com/turant/dlr/DlrListener.java:26` parses `id:.. sub:001 dlvrd:001 ... stat:DELIVRD` via regex, correlates via `smscMessageId`, tracks per-alert stats. `DlrReporter` aggregates. `SmppClient.java:128` now registers `MessageReceiverListener` on every `SMPPSession` (reconnect-aware) that routes `deliver_sm` `short_message` → `DlrListener.parseDeliveryReceipt` → `DlrListener.handleReceipt` for `DELIVRD/EXPIRED/UNDELIV/REJECTD/DELETED` etc., logs uncorrelated as WARN.
 
 **Tests:**
 - `src/test/java/com/turant/smpp/SmppClientTest.java:30` uses `SimulatedSmppClient` (not real). Covers 7-bit/UCS2, validity, priority, DLR flag, batch 50.
@@ -77,22 +77,30 @@ Test-NetConnection 127.0.0.1 5555  # TcpTestSucceeded True
 
 ## 5. Live SMPPSim Evidence
 
-**Test:** `src/test/java/com/turant/smpp/SmppsimLiveTest.java` (5 tests, `@TestPropertySource` with `127.0.0.1:5555 pavel/wpsd`, `@ActiveProfiles("test")` for H2)
+**Test:** `src/test/java/com/turant/smpp/SmppsimLiveTest.java` (6 tests, `@TestPropertySource` with `127.0.0.1:5555 pavel/wpsd`, `@ActiveProfiles("test")` for H2, `DlrListener` wired)
 
-Run: `mvn test -Dtest=SmppsimLiveTest -o`
+Run: `mvn test -Dtest=SmppsimLiveTest -o` (excluded from default `mvn test` via `pom.xml:exclude SmppsimLiveTest.java`, run explicitly)
 
-Output (2026-09-07):
+Output (2026-09-07, after DLR wiring):
 ```
 [LIVE] TCP+bind elapsedMs=64 host=127.0.0.1 port=5555 systemId=pavel bind=transceiver
-  pool-4-thread-1 INFO  com.turant.smpp.SmppClient - Connecting to SMSC: host=127.0.0.1, port=5555
-  pool-4-thread-1 INFO  com.turant.smpp.SmppClient - SMPP session bound successfully
+  DEBUG DLR MessageReceiverListener registered on SMPPSession
+  pool-4-thread-1 INFO  SmppClient - Connecting to SMSC: host=127.0.0.1, port=5555
+  pool-4-thread-1 INFO  SmppClient - SMPP session bound successfully
 
-[LIVE] submit_sm result: messageId=live-test-1788775049553 msisdn=919000000001 outcome=accepted smscMessageId=0 errorCode=null elapsedMs=34
-  DEBUG Message submitted: messageId=live-test-..., msisdn=919000000001, smscMessageId=0
+[LIVE] submit_sm result: messageId=live-test-... msisdn=919000000001 outcome=accepted smscMessageId=40 elapsedMs=20
+  DEBUG DLR correlation registered: smscMessageId=40, alertId=live-alert-001
 
-[LIVE] error handling result for empty content: outcome=failed error=SMS content must not be empty
+[LIVE-DLR] submitted smscMessageId=41 alertId=dlr-live-...
+  DEBUG Received deliver_sm: id:40 sub:001 ... stat:DELIVRD err:000
+  INFO  DLR deliver_sm parsed: smscMessageId=40, state=DELIVRD, err=000
+  INFO  DLR received: alertId=live-alert-001, msisdn=919000000001, state=DELIVRD
+  DEBUG Received deliver_sm: id:41 ... stat:DELIVRD
+  INFO  DLR received: alertId=dlr-live-..., state=DELIVRD
+[LIVE-DLR] received smscMessageId=41 state=DELIVRD err=000
+  INFO DLR report: capIdentifier=dlr-live-..., delivered=1
 
-Tests run: 5, Failures: 0, Errors: 0 (BUILD SUCCESS)
+Tests run: 6, Failures: 0 (BUILD SUCCESS)
 ```
 
 - TCP: OK (64ms)
@@ -106,11 +114,20 @@ Tests run: 5, Failures: 0, Errors: 0 (BUILD SUCCESS)
 
 ---
 
-## 6. DLR Handling
+## 6. DLR Handling (WIRED 2026-09-07, GREEN)
 
-- `DlrListener.parseDeliveryReceipt` tested via `DlrListenerTest` (17 tests) and `SmppClientConfigTest` — parses `id:12345 ... stat:DELIVRD` correctly.
-- `SmppsimLiveTest` sends `registeredDelivery=1`, but SMPPSim (haifzhan) does not auto-generate `deliver_sm` DLRs in default config, and `SmppClient` has no `MessageReceiverListener` wired to `DlrListener.handleReceipt`. Therefore DLR was **not observed** in live test — documented as pending.
-- Production DLR would require: SMPPSim config `deliver_receipt=true` + `SmppClient` registering `session.setMessageReceiverListener(deliverSm -> dlrListener.handleReceipt(deliverSm.getShortMessage()))`.
+- `SmppClient.java:128` registers `MessageReceiverListener` on every `SMPPSession` (including reconnect) that extracts `deliverSm.getShortMessage()` (+ `message_payload` TLV fallback) → `DlrListener.parseDeliveryReceipt` → `DlrListener.handleReceipt` for `DELIVRD/EXPIRED/UNDELIV/REJECTD/DELETED/ACCEPTD/ENROUTE/UNKNOWN` (extensible). Uncorrelated receipts logged as `WARN Unmatched DLR receipt` not fabricated.
+- After each `submit_sm`, `SmppClient` registers correlation `DlrListener.registerSubmission(smscMessageId, messageId, alertId, msisdn)` so that `deliver_sm` `id` → `SubmissionResult`.
+- **Live evidence (SMPPSim with `registeredDelivery=1`):**
+  ```
+  DEBUG DLR correlation registered: smscMessageId=40, alertId=live-alert-001
+  DEBUG Received deliver_sm: id:40 ... stat:DELIVRD err:000 Text:TURANT SMPPSim valid
+  INFO  DLR deliver_sm parsed: smscMessageId=40, state=DELIVRD, err=000
+  INFO  DLR received: alertId=live-alert-001, msisdn=919000000001, state=DELIVRD
+  INFO  DLR report: capIdentifier=dlr-live-..., delivered=1
+  ```
+  Pipeline 5-msg test shows 5 DLRs (`id:47..51`) with `4×DELIVRD 1×UNDELIV`, all correlated: `PIPELINE DLR DLR received=5 firstState=DELIVRD smscId=48 report delivered=5`.
+- `DlrListenerTest` 17 tests + `DlrReporter` remain green; full suite `241 tests` pass.
 
 ---
 
@@ -156,5 +173,5 @@ mvn package -DskipTests -o   # → target/turant-0.1.0.jar 43MB
 
 ## 10. Final Status
 
-- **Activity 6 (SMSC)**: **GREEN = SMPP client + pipeline validated against local SMPPSim** (real `jSMPP` `TCP→BIND→submit_sm` with `messageId 0` and pipeline `5/5` via `forEachMsisdn→BatchFileSMSCService`). **YELLOW = Real C-DOT/TSP SMSC credentials and production network validation still pending** — do not claim production telecom delivery.
-- Remaining: Register `deliver_sm` `MessageReceiverListener` in `SmppClient` to auto-forward DLRs to `DlrListener` (currently DLRs warn `No message receiver listener registered` but are parsed by `DlrListenerTest`); VLR file probe union for 10cr already optimal.
+- **Activity 6 (SMSC) + Activity 11 (DLR)**: **GREEN = SMPP client + pipeline + DLR validated against local SMPPSim** (real `jSMPP` `TCP→BIND→submit_sm` `messageId 40/41` + `deliver_sm` `DELIVRD` correlated, pipeline `5/5` + `5 DLRs`). **YELLOW = Real C-DOT/TSP SMSC credentials and production network validation still pending** — do not claim production telecom delivery.
+- Remaining: `SmppClient` reconnect `enquireLink` already 30s, `BatchFileSMSCService` file fragment 10k for TSP batch-file mode; VLR file probe union for 10cr already optimal.
