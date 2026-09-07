@@ -9,6 +9,7 @@ import com.turant.config.TurantConfig;
 import com.turant.dedup.MsisdnDeduplicator;
 import com.turant.delivery.DeliveryPolicy;
 import com.turant.dlr.DlrReporter;
+import com.turant.ews.EwsService;
 import com.turant.expiry.ExpiryGuard;
 import com.turant.parallel.ParallelOrchestrator;
 import com.turant.parallel.WorkerJob;
@@ -72,6 +73,7 @@ public class AlertPipeline {
     private final DeliveryPolicy deliveryPolicy;
     private final DlrReporter dlrReporter;
     private final EwsCallback ewsCallback;
+    private final EwsService ewsService;
     private final CapParser capParser;
     private final ReportBuilder reportBuilder;
 
@@ -91,6 +93,7 @@ public class AlertPipeline {
             @Autowired(required=false) DeliveryPolicy deliveryPolicy,
             @Autowired(required=false) DlrReporter dlrReporter,
             @Autowired(required=false) EwsCallback ewsCallback,
+            @Autowired(required=false) EwsService ewsService,
             @Autowired(required=false) CapParser capParser,
             @Autowired(required=false) ReportBuilder reportBuilder) {
         this.towerResolver = towerResolver;
@@ -107,9 +110,10 @@ public class AlertPipeline {
         this.deliveryPolicy = deliveryPolicy;
         this.dlrReporter = dlrReporter;
         this.ewsCallback = ewsCallback;
+        this.ewsService = ewsService;
         this.capParser = capParser;
         this.reportBuilder = reportBuilder;
-        logger.info("AlertPipeline initialized: 14 activities wired (prefetch={}, vlr={}, smsc={}, expiry, validity, priority, delivery, dlr, ews)", prefetchService!=null, vlrProbeService!=null, batchSmscService!=null);
+        logger.info("AlertPipeline initialized: 14 activities wired (prefetch={}, vlr={}, smsc={}, expiry, validity, priority, delivery, dlr, ews={})", prefetchService!=null, vlrProbeService!=null, batchSmscService!=null, ewsService!=null?"ewsService":(ewsCallback!=null?"ewsCallback":"none"));
     }
     
     public static class RunPipelineInput {
@@ -455,18 +459,31 @@ public class AlertPipeline {
         );
         statusStore.update(record);
 
-        // Activity 7: Processing Completion Feedback to EWS (Activity 7 + 11)
+        // Activity 7: Processing Completion Feedback to EWS (Activity 7 dual-mode: LOCAL / REMOTE)
+        // Non-blocking: EWS integration never blocks core subscriber pipeline.
         try {
-            if (ewsCallback != null && reportBuilder != null) {
+            if (reportBuilder != null) {
                 long startedAt = statusStore.startedAtOf(capIdentifier) != null ? statusStore.startedAtOf(capIdentifier) : System.currentTimeMillis();
                 var rpt = reportBuilder.buildAlertReport(new com.turant.pipeline.ReportBuilder.ReportInput(capIdentifier, capIdentifier, expectedRecipients, toInt(submitted), toInt(accepted), 0,0,0, towers.size(), startedAt, System.currentTimeMillis()));
-                ewsCallback.pushReportToEws(rpt).whenComplete((res, ex)->{
-                    if (ex!=null) logger.warn("Activity7 EWS callback failed cap={}", capIdentifier, ex);
-                    else logger.info("Activity7 EWS feedback: cap={} delivered={} status={}", capIdentifier, res.isOk(), res.getDelivered());
-                });
-                logger.info("Activity7 feedback queued: processing start={} end={} targeted={} smsCount={} accepted={} expired={}", startedAt, System.currentTimeMillis(), expectedRecipients, submitted, accepted, 0);
-            } else if (ewsCallback != null) {
-                logger.info("Activity7 EWS callback skipped: reportBuilder not available");
+                if (ewsService != null) {
+                    // Use new dual-mode EwsService (LOCAL or REMOTE per EWS_MODE)
+                    try {
+                        var resp = ewsService.sendReport(rpt);
+                        logger.info("Activity7 EWS feedback via EwsService: cap={} mode={} status={} referenceId={}", capIdentifier, resp.mode(), resp.status(), resp.referenceId());
+                    } catch (Exception ex) {
+                        logger.warn("Activity7 EWS service failed cap={}", capIdentifier, ex);
+                    }
+                    logger.info("Activity7 feedback queued via EwsService: start={} end={} targeted={} smsCount={} accepted={}", startedAt, System.currentTimeMillis(), expectedRecipients, submitted, accepted);
+                } else if (ewsCallback != null) {
+                    // Legacy fallback: direct callback (backward compat)
+                    ewsCallback.pushReportToEws(rpt).whenComplete((res, ex)->{
+                        if (ex!=null) logger.warn("Activity7 EWS callback failed cap={}", capIdentifier, ex);
+                        else logger.info("Activity7 EWS feedback (legacy): cap={} delivered={} status={}", capIdentifier, res.isOk(), res.getDelivered());
+                    });
+                    logger.info("Activity7 feedback queued (legacy): processing start={} end={} targeted={} smsCount={} accepted={} expired={}", startedAt, System.currentTimeMillis(), expectedRecipients, submitted, accepted, 0);
+                } else {
+                    logger.info("Activity7 EWS callback skipped: no EWS service available");
+                }
             }
         } catch(Exception e){ logger.warn("EWS callback error",e); }
         // Activity 11 DLR

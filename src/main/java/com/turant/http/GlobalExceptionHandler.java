@@ -1,5 +1,6 @@
 package com.turant.http;
 
+import com.turant.ews.exception.EwsException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,6 +42,31 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(org.apache.catalina.connector.ClientAbortException.class)
     public void handleClientAbort(org.apache.catalina.connector.ClientAbortException ex) {
         logger.debug("Client disconnected prematurely: {}", ex.getMessage());
+    }
+
+    @ExceptionHandler(EwsException.class)
+    public ResponseEntity<ApiError> handleEws(EwsException ex, HttpServletRequest req) {
+        int status = ex.getHttpStatus() != null ? ex.getHttpStatus() : switch (ex.getErrorCode() != null ? ex.getErrorCode() : com.turant.ews.exception.EwsErrorCode.SERVER_ERROR) {
+            case INVALID_REQUEST -> 400;
+            case AUTHENTICATION_FAILURE -> 401;
+            case REMOTE_REJECTED -> 409;
+            case TIMEOUT -> 504;
+            case CONNECTION_FAILURE -> 502;
+            default -> 500;
+        };
+        String code = ex.getErrorCode() != null ? ex.getErrorCode().name() : "EWS_ERROR";
+        logger.warn("EWS exception at {}: {} code={} status={}", req != null ? req.getRequestURI() : "unknown", ex.getMessage(), code, status);
+        String reason = switch (status) {
+            case 400 -> "Bad Request";
+            case 401 -> "Unauthorized";
+            case 403 -> "Forbidden";
+            case 409 -> "Conflict";
+            case 502 -> "Bad Gateway";
+            case 504 -> "Gateway Timeout";
+            default -> "Error";
+        };
+        ApiError body = ApiError.of(req, status, reason, code, ex.getMessage());
+        return ResponseEntity.status(status).body(body);
     }
 
     @ExceptionHandler(Exception.class)

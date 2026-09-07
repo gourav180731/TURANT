@@ -32,7 +32,7 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
     private final String expectedApiKey;
     private final MtlsIdentityService mtlsIdentityService;
     private final ClientCredentialsService clientCredentialsService;
-    private final Set<String> protectedPrefixes = Set.of("/api/v1/pipeline/", "/api/v1/alerts/");
+    private final Set<String> protectedPrefixes = Set.of("/api/v1/pipeline/", "/api/v1/alerts/", "/api/v1/ews/");
     private final Set<String> publicExact = Set.of("/healthz", "/api-docs", "/api-docs.yaml", "/swagger-ui.html");
     private final Set<String> publicPrefixes = Set.of("/swagger-ui/", "/v3/api-docs", "/api-docs/");
 
