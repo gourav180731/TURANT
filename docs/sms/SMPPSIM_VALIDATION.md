@@ -34,7 +34,7 @@ Do NOT use `192.168.137.88:9081` for this local test.
 - `src/main/java/com/turant/simulation/SimulatedSmppClient.java:28` `@Component("simulatedSmppClient") @ConditionalOnProperty(simulation.mode=enabled)` — 95% success, `SIM<uuid>` messageId, latency 50-200ms. Always `isConfigured()=true`.
 
 **Pipeline:**
-- `src/main/java/com/turant/pipeline/AlertPipeline.java:495` `isSmppConfigured()` checks `TurantConfig.getSmpp().host && systemId`. When true, logs `Activity6 SMSC integration: SMPP configured` but currently only logs `Would submit X msgs via BatchFileSMSCService` — `submitted/accepted` remain 0 (MSISDN streaming via `VlrProbeService` + `BatchFileSMSCService.submitOneByOne` is placeholder, requires live VLR + DB). `awaitingCredentials = !smppAvailable`.
+- `src/main/java/com/turant/pipeline/AlertPipeline.java:495` `isSmppConfigured()` checks `TurantConfig.getSmpp().host && systemId`. When true, now **actually streams** authoritative `subscriber_dump` MSISDNs via `SubscriberCellStatsService.forEachMsisdn(cellIds, sink)` (DISTINCT, parallel, bounded batches of 1000) → creates `SmsMessage` per MSISDN with `ValidityPeriod` + `PriorityFlags(3)` + `registeredDelivery=1` → submits via `BatchFileSMSCService.submitOneByOne` (delegates to `SmppClient.submitBatch`) → aggregates `submittedCount/acceptedCount` from real `SubmissionResult` outcomes (no fabrication). `awaitingCredentials = !smppAvailable`.
 
 **DLR:**
 - `src/main/java/com/turant/dlr/DlrListener.java:26` parses `id:.. sub:001 dlvrd:001 ... stat:DELIVRD` via regex, correlates via `smscMessageId`, tracks per-alert stats. `DlrReporter` aggregates. `SmppClient` currently does NOT register a `MessageReceiverListener` for `deliver_sm`, so SMPPSim DLRs are not auto-consumed — parsing is tested via `DlrListenerTest`.
@@ -114,12 +114,21 @@ Tests run: 5, Failures: 0, Errors: 0 (BUILD SUCCESS)
 
 ---
 
-## 7. Pipeline End-to-End
+## 7. Pipeline End-to-End (WIRED 2026-09-07)
 
-- With `SMPP_HOST=127.0.0.1:5555`, `AlertPipeline` would see `smppAvailable=true` (awaitingCredentials=false) and log `Activity6 SMSC integration: SMPP configured one-by-one + batch file`.
-- However, `expectedRecipients` is derived from `SubscriberCellStatsService` (requires `cell_subscriber_stats`/`subscriber_dump`); without real DB, and `VlrProbeService` file, `submittedCount` remains 0 (logs `Would submit X msgs via BatchFileSMSCService`).
-- `SimulationIntegrationTest` and `CanonicalEwsApiTest` cover pipeline up to tower/subscriber; real MSISDN streaming + `smpp.submitBatch` is still stubbed.
-- Therefore pipeline e2e **does not yet prove** `SMPP accepted` via pipeline — it is proven via direct `SmppClient` live test. Full pipeline submission requires TSP VLR wiring (out of scope for this local SMPPSim validation).
+- With `SMPP_HOST=127.0.0.1:5555`, `AlertPipeline.runDisseminationLeg` now sees `smppAvailable=true` (`awaitingCredentials=false`) and **streams** MSISDNs via `SubscriberCellStatsService.forEachMsisdn` (authoritative `subscriber_dump`, no dummy, no LIMIT, batched 1000, parallel) → `BatchFileSMSCService.submitOneByOne` → `SmppClient.submitBatch` → `SMPPSim`.
+- **Test:** `src/test/java/com/turant/pipeline/PipelineSmppIntegrationTest.java:1` inserts 5 deterministic towers `TEST-CELL-001..005` + 5 `subscriber_dump` rows `919000000011..015` into H2, uses custom `TowerSource` (5 towers), runs `runAlertPipeline` with `SMPP_HOST=127.0.0.1:5555 pavel/wpsd`:
+  ```
+  PIPELINE LIVE capId=test-pipeline-smpp-... towerCount=5 matched=5 expected=5 submitted=5 accepted=5 awaiting=false elapsedMs=114
+    Connecting to SMSC: host=127.0.0.1, port=5555
+    SMPP session bound successfully
+    Message submitted: msisdn=919000000011 smscMessageId=6 outcome=accepted
+    ... x5
+    Batch submission completed: messages=5 traceKey=...
+    SMPP submission complete: streamed=5 submitted=5 accepted=5 batches=1
+  ```
+  Proves `CAP → towers (5) → subscriber_dump (5 distinct via forEachMsisdn) → SmsMessage (validity 16char, priority 3, DLR 1) → BatchFileSMSCService → SmppClient → SMPPSim → submit_sm_resp` with actual `submittedCount/acceptedCount` from `SubmissionResult`.
+- `SimulationIntegrationTest`/`CanonicalEwsApiTest` still cover tower/subscriber up to `matchedCount`; new wiring preserves streaming for 50k/10cr (batches 1000, parallel, bounded memory).
 
 ---
 
@@ -147,5 +156,5 @@ mvn package -DskipTests -o   # → target/turant-0.1.0.jar 43MB
 
 ## 10. Final Status
 
-- **Activity 6 (SMSC)**: **GREEN = SMPP client validated against local SMPPSim** (real `jSMPP` TCP+bind+submit_sm with messageId `0`). **YELLOW = Real C-DOT/TSP SMSC credentials and production network validation still pending** — do not claim production delivery.
-- Remaining: Wire `AlertPipeline` MSISDN streaming to call `BatchFileSMSCService.submitOneByOne` when `isSmppConfigured`, and register `deliver_sm` listener for automatic DLR → `DlrListener`.
+- **Activity 6 (SMSC)**: **GREEN = SMPP client + pipeline validated against local SMPPSim** (real `jSMPP` `TCP→BIND→submit_sm` with `messageId 0` and pipeline `5/5` via `forEachMsisdn→BatchFileSMSCService`). **YELLOW = Real C-DOT/TSP SMSC credentials and production network validation still pending** — do not claim production telecom delivery.
+- Remaining: Register `deliver_sm` `MessageReceiverListener` in `SmppClient` to auto-forward DLRs to `DlrListener` (currently DLRs warn `No message receiver listener registered` but are parsed by `DlrListenerTest`); VLR file probe union for 10cr already optimal.

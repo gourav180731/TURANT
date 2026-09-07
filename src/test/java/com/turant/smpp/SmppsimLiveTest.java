@@ -2,6 +2,7 @@ package com.turant.smpp;
 
 import com.turant.types.sms.*;
 import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
@@ -16,9 +17,11 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * LIVE SMPPSim test — validates real SmppClient against haifzhan/SMPPSim on 127.0.0.1:5555
  * Credentials: pavel / wpsd / SMPP (DEVELOPMENT/TEST ONLY)
- * Run: mvn test -Dtest=SmppsimLiveTest -o
+ * Run: mvn test -Dtest=SmppsimLiveTest -o  OR  mvn test -Dgroups=live
  * Requires SMPPSim running on 127.0.0.1:5555
  * This test is NOT mocked — it performs real TCP + SMPP bind + submit_sm.
+ * Excluded from default mvn test via surefire <excludes>SmppsimLiveTest.java</excludes> to avoid CI failure when SMPPSim is down.
+ * Run explicitly: mvn test -Dtest=SmppsimLiveTest -o  (or mvn test -Dtest=SmppsimLiveTest#testTcpBindAndAuthentication)
  */
 @SpringBootTest
 @ActiveProfiles("test")

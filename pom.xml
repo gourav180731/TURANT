@@ -215,6 +215,9 @@
                     <includes>
                         <include>**/*Test.java</include>
                     </includes>
+                    <excludes>
+                        <exclude>**/SmppsimLiveTest.java</exclude>
+                    </excludes>
                 </configuration>
             </plugin>
         </plugins>
