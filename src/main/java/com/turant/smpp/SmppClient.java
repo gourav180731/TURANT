@@ -1,5 +1,6 @@
 package com.turant.smpp;
 
+import com.turant.dlr.DlrListener;
 import com.turant.types.sms.DeliveryOutcome;
 import com.turant.types.sms.SmsDataCoding;
 import com.turant.types.sms.SmsMessage;
@@ -7,14 +8,18 @@ import com.turant.types.sms.SubmissionResult;
 import org.jsmpp.InvalidResponseException;
 import org.jsmpp.bean.*;
 import org.jsmpp.extra.NegativeResponseException;
+import org.jsmpp.extra.ProcessRequestException;
 import org.jsmpp.extra.ResponseTimeoutException;
 import org.jsmpp.session.BindParameter;
+import org.jsmpp.session.DataSmResult;
+import org.jsmpp.session.MessageReceiverListener;
 import org.jsmpp.session.SMPPSession;
 import org.jsmpp.session.SubmitSmResult;
 import org.jsmpp.util.AbsoluteTimeFormatter;
 import org.jsmpp.util.TimeFormatter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -43,6 +48,7 @@ public class SmppClient {
     private SMPPSession session;
     private boolean closedByUs = false;
     private final ExecutorService executor;
+    private final DlrListener dlrListener;
     
     @Value("${smpp.host:}")
     private String smppHost;
@@ -92,8 +98,9 @@ public class SmppClient {
     @Value("${smpp.enquire-link-period-ms:30000}")
     private long enquireLinkPeriodMs;
     
-    public SmppClient() {
+    public SmppClient(@Autowired(required = false) DlrListener dlrListener) {
         this.executor = Executors.newFixedThreadPool(16);
+        this.dlrListener = dlrListener;
     }
     
     /**
@@ -128,6 +135,13 @@ public class SmppClient {
                 session = new SMPPSession();
                 session.setEnquireLinkTimer((int) (enquireLinkPeriodMs / 1000));
                 session.setTransactionTimer(submitTimeoutMs);
+                // Wire DLR listener to every new session (reconnect preserves correlation)
+                if (dlrListener != null) {
+                    session.setMessageReceiverListener(createDlrMessageReceiverListener());
+                    logger.debug("DLR MessageReceiverListener registered on SMPPSession");
+                } else {
+                    logger.debug("No DlrListener available — deliver_sm will not be correlated");
+                }
                 
                 BindParameter bindParam = new BindParameter(
                     BindType.BIND_TRX, // Use transceiver by default
@@ -263,6 +277,15 @@ public class SmppClient {
             
             logger.debug("Message submitted: messageId={}, msisdn={}, smscMessageId={}", 
                 message.messageId(), message.msisdn(), messageId);
+            // Register for DLR correlation (existing DlrListener logic)
+            if (dlrListener != null && messageId != null && !messageId.isBlank()) {
+                try {
+                    dlrListener.registerSubmission(messageId, message.messageId(), message.alertId(), message.msisdn());
+                    logger.debug("DLR correlation registered: smscMessageId={}, alertId={}, msisdn={}", messageId, message.alertId(), message.msisdn());
+                } catch (Exception e) {
+                    logger.warn("Failed to register DLR correlation for smscMessageId={}", messageId, e);
+                }
+            }
             
             return new SubmissionResult(
                 message.messageId(),
@@ -333,6 +356,94 @@ public class SmppClient {
         return content;
     }
     
+    /**
+     * Create MessageReceiverListener that routes deliver_sm to existing DlrListener.
+     * Attached to every new SMPPSession (reconnect preserves correlation).
+     * Handles DELIVRD, EXPIRED, UNDELIV, REJECTD, DELETED and extensible others.
+     */
+    private MessageReceiverListener createDlrMessageReceiverListener() {
+        return new MessageReceiverListener() {
+            @Override
+            public void onAcceptDeliverSm(DeliverSm deliverSm) throws ProcessRequestException {
+                try {
+                    byte[] shortMsg = deliverSm.getShortMessage();
+                    String receiptText = null;
+                    if (shortMsg != null && shortMsg.length > 0) {
+                        // jSMPP delivers short_message as bytes; SMPPSim uses GSM7 plain text
+                        try {
+                            receiptText = new String(shortMsg, java.nio.charset.StandardCharsets.UTF_8);
+                            // If contains non-UTF8, fallback to GSM
+                            if (receiptText.contains("\u0000")) {
+                                receiptText = new String(shortMsg, java.nio.charset.StandardCharsets.ISO_8859_1);
+                            }
+                        } catch (Exception e) {
+                            receiptText = new String(shortMsg, java.nio.charset.StandardCharsets.ISO_8859_1);
+                        }
+                    }
+                    // Also check message_payload optional param if short_message empty
+                    if ((receiptText == null || receiptText.isBlank()) && deliverSm.getOptionalParameters() != null) {
+                        for (org.jsmpp.bean.OptionalParameter op : deliverSm.getOptionalParameters()) {
+                            if (op instanceof org.jsmpp.bean.OptionalParameter.Message_payload) {
+                                byte[] payload = ((org.jsmpp.bean.OptionalParameter.Message_payload) op).getValue();
+                                if (payload != null) receiptText = new String(payload, java.nio.charset.StandardCharsets.UTF_8);
+                            }
+                        }
+                    }
+                    if (receiptText == null) receiptText = "";
+                    // Trim for logging (never log credentials — receipt has no secrets)
+                    String logText = receiptText.length() > 300 ? receiptText.substring(0, 300) + "..." : receiptText;
+                    logger.debug("Received deliver_sm: {}", logText);
+
+                    if (dlrListener != null) {
+                        var parsed = DlrListener.parseDeliveryReceipt(receiptText);
+                        if (parsed != null) {
+                            String state = parsed.messageState();
+                            // Handle expected states, but extensible — any stat is recorded
+                            if (state != null) {
+                                switch (state) {
+                                    case "DELIVRD":
+                                    case "EXPIRED":
+                                    case "UNDELIV":
+                                    case "REJECTD":
+                                    case "DELETED":
+                                    case "ACCEPTD":
+                                    case "ENROUTE":
+                                    case "UNKNOWN":
+                                        logger.info("DLR deliver_sm parsed: smscMessageId={}, state={}, err={}", parsed.smscMessageId(), state, parsed.errorCode());
+                                        break;
+                                    default:
+                                        logger.info("DLR deliver_sm with unlisted state: smscMessageId={}, state={}, err={}", parsed.smscMessageId(), state, parsed.errorCode());
+                                }
+                            }
+                            // Correlate via existing logic (logs matched vs uncorrelated)
+                            dlrListener.handleReceipt(receiptText, null);
+                        } else {
+                            logger.debug("Non-DLR deliver_sm ignored (no id/stat): {}", logText);
+                            // Still try to handle via DlrListener for uncorrelated logging
+                            dlrListener.handleReceipt(receiptText, null);
+                        }
+                    } else {
+                        logger.warn("DLR received but no DlrListener registered — receipt not correlated");
+                    }
+                } catch (Exception e) {
+                    logger.warn("Failed to process deliver_sm", e);
+                    // Do not throw ProcessRequestException — we want to ACK the deliver_sm (ESME_ROK) even if parsing fails
+                }
+            }
+
+            @Override
+            public void onAcceptAlertNotification(AlertNotification alertNotification) {
+                logger.debug("Received AlertNotification: {}", alertNotification);
+            }
+
+            @Override
+            public DataSmResult onAcceptDataSm(DataSm dataSm, org.jsmpp.session.Session source) throws ProcessRequestException {
+                logger.debug("Received DataSm: {}", dataSm);
+                return null;
+            }
+        };
+    }
+
     /**
      * Get human-readable error text for SMPP command status.
      */

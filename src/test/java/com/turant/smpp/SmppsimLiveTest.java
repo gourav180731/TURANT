@@ -1,5 +1,7 @@
 package com.turant.smpp;
 
+import com.turant.dlr.DlrListener;
+import com.turant.dlr.DlrReporter;
 import com.turant.types.sms.*;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.Tag;
@@ -48,6 +50,12 @@ class SmppsimLiveTest {
 
     @Autowired
     private SmppClient smppClient;
+
+    @Autowired
+    private DlrListener dlrListener;
+
+    @Autowired
+    private DlrReporter dlrReporter;
 
     @Test
     @Order(1)
@@ -150,6 +158,65 @@ class SmppsimLiveTest {
                 "Must use real SmppClient, not simulated, when SMPP_HOST is configured");
         // Also verify real client is configured with 127.0.0.1:5555, not falling back to simulated
         assertTrue(smppClient.isConfigured());
+    }
+
+    @Test
+    @Order(6)
+    void testDlrReceiveAndCorrelation() throws Exception {
+        smppClient.connect().get(10, TimeUnit.SECONDS);
+        String alertId = "dlr-live-" + System.currentTimeMillis();
+        Instant validity = Instant.now().plus(2, ChronoUnit.HOURS);
+        SmsMessage msg = new SmsMessage(
+                "dlr-msg-" + System.currentTimeMillis(),
+                alertId,
+                "919000000099",
+                "DLR correlation test",
+                SmsDataCoding.SEVEN_BIT,
+                validity,
+                PriorityFlags.earlyWarningPriorityFlag(),
+                1 // registeredDelivery=1 to request DLR
+        );
+        SubmissionResult result = smppClient.submitSingle(msg).get(10, TimeUnit.SECONDS);
+        assertNotNull(result);
+        assertEquals(DeliveryOutcome.accepted, result.outcome());
+        String smscMessageId = result.smscMessageId();
+        assertNotNull(smscMessageId, "Must capture smscMessageId for DLR correlation");
+        assertFalse(smscMessageId.isBlank());
+        System.out.println("[LIVE-DLR] submitted smscMessageId=" + smscMessageId + " alertId=" + alertId);
+
+        // Wait for deliver_sm (SMPPSim sends DLR asynchronously, typically <2s)
+        DlrListener.AlertReceiptStats stats = null;
+        DlrReceipt receipt = null;
+        for (int i = 0; i < 20; i++) {
+            Thread.sleep(500);
+            stats = dlrListener.receiptsForAlert(alertId);
+            if (stats != null && stats.getReceivedCount() > 0) {
+                receipt = stats.getReceived().get(0);
+                break;
+            }
+        }
+        assertNotNull(stats, "DLR stats should be recorded for alertId " + alertId);
+        assertTrue(stats.getReceivedCount() >= 1, "At least one DLR should be received");
+        assertNotNull(receipt, "Receipt should be parsed");
+        System.out.println("[LIVE-DLR] received smscMessageId=" + receipt.smscMessageId() + " state=" + receipt.messageState() + " err=" + receipt.errorCode() + " deliveredAt=" + receipt.deliveredAt());
+        // Correlate: DLR id must match submit's smscMessageId
+        assertEquals(smscMessageId, receipt.smscMessageId(), "DLR id must correlate with submit_sm_resp smscMessageId");
+        // Handle at least DELIVRD (SMPPSim default)
+        assertTrue(receipt.messageState() != null && (
+                receipt.messageState().equals("DELIVRD") ||
+                receipt.messageState().equals("EXPIRED") ||
+                receipt.messageState().equals("UNDELIV") ||
+                receipt.messageState().equals("REJECTD") ||
+                receipt.messageState().equals("DELETED") ||
+                receipt.messageState().equals("ACCEPTD") ||
+                receipt.messageState().equals("ENROUTE")),
+                "State should be one of expected DLR states, got " + receipt.messageState());
+        // Verify DlrReporter aggregates correctly
+        var report = dlrReporter.buildDeliveryReport(alertId);
+        assertNotNull(report);
+        assertEquals(alertId, report.getCapIdentifier());
+        assertTrue(report.getDelivered() >= 1);
+        System.out.println("[LIVE-DLR] report delivered=" + report.getDelivered() + " expected=" + report.getExpectedRecipients() + " firstMs=" + report.getFirstReceivedEpochMs());
     }
 
     @AfterEach
