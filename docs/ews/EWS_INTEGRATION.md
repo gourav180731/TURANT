@@ -1,11 +1,11 @@
 # EWS Integration — Activity 7 (TURANT 0.1.0)
 
-**Implementation: GREEN / implemented**  
-**Real integration: YELLOW / pending external EWS endpoint + authorized credentials + live test**
+**EWS application-side implementation and local/controlled endpoint validation: GREEN**  
+**Production C-DOT EWS integration: pending provision of the authorized C-DOT endpoint, interface contract, authentication/certificates and network access**
 
 > Real EWS integration is considered complete only after successful end-to-end communication with the authorized C-DOT EWS environment.
 
-Pending C-DOT EWS integration contract: `EWS_BASE_URL`, `EWS_PATH`, `EWS_METHOD`, `auth header` and JSON/XML schemas are **configurable** — no real URLs or credentials are hardcoded.
+Pending C-DOT EWS integration contract: `EWS_BASE_URL`, `EWS_PATH`, `EWS_METHOD`, `auth header` and JSON/XML schemas are **configurable** — no real URLs or credentials are hardcoded. Local controlled endpoint is runnable via `POST /api/v1/ews/local/receive` and inspected via `GET /api/v1/ews/local/last-received`.
 
 ---
 
@@ -27,15 +27,17 @@ Pipeline/business logic → EwsService → EwsClientFactory → (Local | Remote)
 Package: `src/main/java/com/turant/ews/`
 
 - `EwsMode.java` — LOCAL / REMOTE enum, rejects invalid modes at startup
-- `config/EwsProperties.java` — `@ConfigurationProperties(prefix="turant.ews")`
+- `config/EwsProperties.java` — `@ConfigurationProperties(prefix="turant.ews")` (now includes `localUrl` for HTTP loopback)
 - `EwsClient.java` — interface `send(EwsRequest)`, `sendReport(AlertReport)`
-- `LocalEwsClient.java` — DEVELOPMENT/TEST, simulates success, never calls remote
+- `LocalEwsClient.java` — DEVELOPMENT/TEST, **does real HTTP** to `turant.ews.local-url` (`EWS_LOCAL_URL`, default `http://localhost:${PORT}/api/v1/ews/local/receive` via `local.server.port` fallback) when configured; else deterministic in-memory fallback. Logs `alertId, url` only, never secrets.
 - `RemoteEwsClient.java` — `RestClient` with connect/read timeouts, configurable path/method/headers, explicit error mapping, never logs secrets
+- `LocalEwsStore.java` — `Component` storing last `EwsRequest`/`EwsResponse`, history, `receivedCount`, `failureSimulations` for manual inspection and test verification
 - `EwsClientFactory.java` — mode-based selection, `local→LocalEwsClient`, `remote→RemoteEwsClient`, throws on invalid
 - `EwsService.java` — business layer, handles feedback persistence/idempotency, async pipeline integration
 - `dto/EwsRequest.java, EwsResponse.java, EwsFeedback.java`
 - `exception/EwsException.java, EwsErrorCode.java`
-- `controller/EwsLocalController.java` — `POST /api/v1/ews/local/test`, `GET /api/v1/ews/mode`
+- `controller/LocalEwsReceiveController.java` — **Controlled local EWS server** `POST /api/v1/ews/local/receive` (logs, validates, stores to `LocalEwsStore`, returns `accepted` or simulated failure via `?simulateFailure=`), `GET /last-received`, `/received-count`, `/history`, `POST /clear`
+- `controller/EwsLocalController.java` — `POST /api/v1/ews/local/test`, `GET /api/v1/ews/mode` (test helper)
 - `controller/EwsRemoteController.java` — `POST /api/v1/ews/test-remote` (rejects if not remote, no silent fallback, no mode switching)
 - `controller/EwsFeedbackController.java` — `POST /api/v1/ews/feedback` (authenticated, validated, idempotent, persists to `ews_feedback` + memory)
 
@@ -55,6 +57,7 @@ Existing pipeline integration is **non-blocking**: `AlertPipeline` calls `EwsSer
 ```properties
 turant.ews.mode=${EWS_MODE:local}
 turant.ews.base-url=${EWS_BASE_URL:}
+turant.ews.local-url=${EWS_LOCAL_URL:}  # e.g., http://localhost:8080/api/v1/ews/local/receive for local HTTP (blank → in-memory fallback)
 turant.ews.api-key=${EWS_API_KEY:}
 turant.ews.username=${EWS_USERNAME:}
 turant.ews.password=${EWS_PASSWORD:}
@@ -76,10 +79,11 @@ turant.ews.callback-token=${EWS_CALLBACK_TOKEN:}
 
 ```bash
 EWS_MODE=local
+EWS_LOCAL_URL=http://localhost:8080/api/v1/ews/local/receive  # real HTTP to controlled local EWS (or blank → in-memory fallback)
 # No EWS_BASE_URL needed. Credentials not required.
 ```
 
-Behavior: `POST /api/v1/ews/local/test` returns `{"mode":"local","status":"accepted","referenceId":"LOCAL-...","timestamp":"..."}` without any external HTTP call.
+Behavior: `POST /api/v1/ews/local/receive` (controlled local EWS server) receives pipeline's `EwsRequest` via HTTP (`LocalEwsClient` → `RestClient` → `LocalEwsReceiveController`), logs, validates, stores in `LocalEwsStore`, returns `{"mode":"local","status":"accepted","referenceId":"LOCAL-...","timestamp":"...","alertId":"...","payload":{...}}`. Inspect via `GET /api/v1/ews/local/last-received`. `POST /api/v1/ews/local/test` is a test helper that also goes through the same path (HTTP if `EWS_LOCAL_URL` set, else in-memory).
 
 ### REMOTE (C-DOT)
 
@@ -109,11 +113,16 @@ Credentials **never** appear in source, logs, or error messages. Remote client l
 
 ## 3. Endpoints
 
-All `/api/v1/ews/**` are protected by `ApiKeyAuthFilter` (`/api/v1/ews/` added to `protectedPrefixes`) and `SecurityService` (ApiKey / mTLS + IP + rate limit). Public paths (`/healthz`, `/api-docs`) remain public.
+All `/api/v1/ews/**` are protected by `ApiKeyAuthFilter` (`/api/v1/ews/` added to `protectedPrefixes`) and `SecurityService` (ApiKey / mTLS + IP + rate limit). Public paths (`/healthz`, `/api-docs`) remain public. Local receive endpoint is public in dev (no API key required when `EWS_API_KEY` empty — filter pass-through); in production, set `EWS_API_KEY` to enforce.
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| `POST` | `/api/v1/ews/local/test` | ApiKey/mTLS | **LOCAL only** — simulate EWS send, never calls remote. Body `EwsRequest` (`alertId, message, severity`). Returns `mode=local, status=accepted, referenceId=LOCAL-..., timestamp`. |
+| `POST` | `/api/v1/ews/local/receive` | **Public in dev** (local controlled EWS server) | **LOCAL EWS SERVER** — pipeline's Activity 7 posts here when `EWS_MODE=local` (via `LocalEwsClient` HTTP). Validates `alertId`, logs, stores in `LocalEwsStore`, returns `mode=local, status=accepted, referenceId=LOCAL-..., timestamp`. Supports `?simulateFailure=401/500` and `X-EWS-FAIL` header for error path testing. This is the runnable local EWS endpoint. |
+| `POST` | `/api/v1/ews/local/test` | ApiKey/mTLS | **LOCAL test helper** — simulate EWS send via `LocalEwsClient` (HTTP to `localUrl` if set, else in-memory fallback). Body `EwsRequest`. Returns `mode=local, status=accepted`. |
+| `GET` | `/api/v1/ews/local/last-received` | ApiKey/mTLS | Inspect last EWS report received by controlled local endpoint (for manual demo). Returns `receivedCount, lastReceivedAt, request, response`. |
+| `GET` | `/api/v1/ews/local/received-count` | ApiKey/mTLS | Count of received EWS reports |
+| `GET` | `/api/v1/ews/local/history` | ApiKey/mTLS | Full history of received `EwsRequest`s |
+| `POST` | `/api/v1/ews/local/clear` | ApiKey/mTLS | Clear `LocalEwsStore` (test utility) |
 | `POST` | `/api/v1/ews/test-remote` | ApiKey/mTLS | **REMOTE only** — invokes `RemoteEwsClient`. Validates `mode==remote`, returns actual remote response or mapped error (401/TIMEOUT/502/5xx). If `mode!=remote` → `400 {status:rejected, reason:EWS is not configured in remote mode}`. Never switches mode dynamically. |
 | `POST` | `/api/v1/ews/feedback` | ApiKey/mTLS | **EWS → TURANT callback** — receives delivery feedback from EWS. Validates `alertId` (`[A-Za-z0-9._-]{1,255}`), persists idempotently (`alertId+referenceId` unique), updates pipeline correlation, returns `acknowledged` (`duplicate:true` for replay). |
 | `GET` | `/api/v1/ews/feedback/{alertId}` | ApiKey/mTLS | Query stored feedbacks for alertId |

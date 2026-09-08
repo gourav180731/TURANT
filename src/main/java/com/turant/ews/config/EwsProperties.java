@@ -83,6 +83,15 @@ public class EwsProperties {
      */
     private int callbackTimeoutMs = 5000;
 
+    /**
+     * Local EWS receive URL for HTTP loopback when mode=local.
+     * If set, LocalEwsClient will POST via HTTP to this URL (real network interaction).
+     * If blank, LocalEwsClient falls back to in-memory simulation (still deterministic).
+     * Example: http://localhost:8080/api/v1/ews/local/receive
+     * Bound from ${EWS_LOCAL_URL:} or ${turant.ews.local-url:}
+     */
+    private String localUrl;
+
     // SSL / mTLS hooks (only enabled when C-DOT certs are supplied)
     private boolean sslEnabled = false;
     private String keystore;
@@ -163,6 +172,9 @@ public class EwsProperties {
 
     public int getCallbackTimeoutMs() { return callbackTimeoutMs; }
     public void setCallbackTimeoutMs(int callbackTimeoutMs) { this.callbackTimeoutMs = callbackTimeoutMs; }
+
+    public String getLocalUrl() { return localUrl; }
+    public void setLocalUrl(String localUrl) { this.localUrl = localUrl; }
 
     public boolean isSslEnabled() { return sslEnabled; }
     public void setSslEnabled(boolean sslEnabled) { this.sslEnabled = sslEnabled; }

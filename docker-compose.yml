@@ -67,6 +67,17 @@ services:
       TURANT_SMPP_SYSTEM_ID: ${SMPP_SYSTEM_ID:-}
       TURANT_SMPP_PASSWORD: ${SMPP_PASSWORD:-}
       
+      # EWS Integration — Activity 7 (local vs remote)
+      EWS_MODE: ${EWS_MODE:-remote}
+      EWS_BASE_URL: ${EWS_BASE_URL:-}
+      EWS_LOCAL_URL: ${EWS_LOCAL_URL:-}
+      EWS_API_KEY: ${EWS_API_KEY:-}
+      EWS_USERNAME: ${EWS_USERNAME:-}
+      EWS_PASSWORD: ${EWS_PASSWORD:-}
+      EWS_PATH: ${EWS_PATH:-/ews/callback}
+      EWS_CONNECT_TIMEOUT: ${EWS_CONNECT_TIMEOUT:-5s}
+      EWS_READ_TIMEOUT: ${EWS_READ_TIMEOUT:-15s}
+      
       # Simulation mode (disable in production with real SMPP)
       SIMULATION_MODE: ${SIMULATION_MODE:-disabled}
       
