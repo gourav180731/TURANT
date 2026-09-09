@@ -1,0 +1,55 @@
+{
+  "id": "turant-security-env-v1",
+  "name": "TURANT Security Local/Staging Environment",
+  "values": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "serverHost",
+      "value": "localhost",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "serverPort",
+      "value": "8080",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "tlsPort",
+      "value": "8443",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "validApiKeyTspA",
+      "value": "test-key-12345",
+      "type": "secret",
+      "enabled": true
+    },
+    {
+      "key": "limitedApiKeyTspB",
+      "value": "test-key-bbbbb",
+      "type": "secret",
+      "enabled": true
+    },
+    {
+      "key": "adminApiKey",
+      "value": "test-key-12345",
+      "type": "secret",
+      "enabled": true
+    },
+    {
+      "key": "existingCapId",
+      "value": "earthquake-delhi-001",
+      "type": "default",
+      "enabled": true
+    }
+  ],
+  "_postman_variable_scope": "environment"
+}

@@ -1,0 +1,19 @@
+TURANT-RELEASE-v0.1.0 Checksums
+Generated: 2026-09-08 (Asia/Kolkata)
+Git Commit: 22ab6a1ac9ba2599b8244ca8b9d81d295ca308a8
+Maven: 3.10.0-rc-1  Java: 22.0.2  Spring Boot: 3.2.2  jSMPP: 3.0.1
+
+SHA-256 (target/turant-0.1.0.jar):
+3E3CF814664E9435906F61A8B28C8211924E96258299F750AC8DC26A726D7660  turant-0.1.0.jar
+Size: 43100818 bytes (41 MB)
+Path: target/turant-0.1.0.jar
+Repackaged: Spring Boot JarLauncher (BOOT-INF/)
+Original (non-repackaged): target/turant-0.1.0.jar.original
+
+Verify:
+  certutil -hashfile target\turant-0.1.0.jar SHA256   (Windows)
+  sha256sum target/turant-0.1.0.jar                (Linux)
+  Get-FileHash target/turant-0.1.0.jar -Algorithm SHA256  (PowerShell)
+
+Note: JAR timestamp is 1980-01-02 05:30:00 (spring-boot-maven-plugin reproducible build).
+Do not use historical checksums — verify against this actual file.

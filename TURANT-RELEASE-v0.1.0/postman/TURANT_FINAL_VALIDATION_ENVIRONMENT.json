@@ -1,0 +1,56 @@
+{
+  "id": "turant-final-validation-env-v0.1.0",
+  "name": "TURANT Final Validation Environment - v0.1.0",
+  "description": "Placeholders only \u2014 no real credentials. baseUrl http://localhost:8080, apiKey change_me..., serverHost localhost, tlsPort 8443, existingCapId placeholder.",
+  "values": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "serverHost",
+      "value": "localhost",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "serverPort",
+      "value": "8080",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "tlsPort",
+      "value": "8443",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "apiKey",
+      "value": "change_me_in_production_generate_64_hex",
+      "type": "secret",
+      "enabled": true
+    },
+    {
+      "key": "validApiKeyTspA",
+      "value": "change_me_in_production_generate_64_hex",
+      "type": "secret",
+      "enabled": true
+    },
+    {
+      "key": "capIdentifier",
+      "value": "test-cap-001",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "existingCapId",
+      "value": "earthquake-delhi-001",
+      "type": "default",
+      "enabled": true
+    }
+  ],
+  "_postman_variable_scope": "environment"
+}
