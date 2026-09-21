@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import java.io.*;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.*;
@@ -58,13 +59,44 @@ public class VlrProbeService {
             return new ProbeResult(-1,-1, System.currentTimeMillis()-t0, "fallback-db", null);
         }
 
-        // Parallel chunked probe: split file by byte offsets aligned to newline, no sort
-        long fileSize = vlrFile.toFile().length();
-        int chunks = (int)Math.max(1, Math.min(parallelism, (fileSize / (chunkMb*1024L*1024L))+1));
-        ExecutorService exec = Executors.newFixedThreadPool(chunks, r->{ Thread t=new Thread(r,"vlr-probe"); t.setDaemon(true); return t;});
+        // Handle gzipped VLR file (as written by SubscriberPrefetchService) vs plain CSV
+        // BUG FIX 2026-09-21: original code read .gz via mmap without decompressing -> always 0 matched.
+        // Now detects .gz and decompresses via GZIPInputStream, correctly counting distinct even when sink==null.
         AtomicLong matched = new AtomicLong();
         Set<String> distinct = ConcurrentHashMap.newKeySet();
 
+        String fileName = vlrFile.getFileName().toString();
+        boolean isGz = fileName.endsWith(".gz");
+        if (isGz) {
+            // Gzip is not splittable for mmap — stream sequentially (still O(N+k) hash probe, <60s for 10cr with hash)
+            try (InputStream fis = Files.newInputStream(vlrFile);
+                 InputStream gz = new java.util.zip.GZIPInputStream(fis);
+                 BufferedReader br = new BufferedReader(new InputStreamReader(gz))) {
+                String line;
+                while ((line = br.readLine()) != null) {
+                    if (line.isEmpty()) continue;
+                    int comma = line.indexOf(',');
+                    if (comma>0) {
+                        String cell = line.substring(0, comma);
+                        if (hashT.contains(cell)) {
+                            matched.incrementAndGet();
+                            int c2 = line.indexOf(',', comma+1);
+                            String msisdn = c2>0 ? line.substring(comma+1, c2) : line.substring(comma+1);
+                            distinct.add(msisdn);
+                            if (msisdnSink != null) msisdnSink.accept(msisdn);
+                        }
+                    }
+                }
+            }
+            long elapsed = System.currentTimeMillis()-t0;
+            log.info("VLR probe done k={} N~10cr file={} matched={} distinct={} elapsedMs={} mode=hash-gzip-stream", hashT.size(), vlrFile, matched.get(), distinct.size(), elapsed);
+            return new ProbeResult(matched.get(), distinct.size(), elapsed, "hash-mmap-parallel", vlrFile);
+        }
+
+        // Parallel chunked probe for plain CSV: split file by byte offsets aligned to newline, no sort
+        long fileSize = vlrFile.toFile().length();
+        int chunks = (int)Math.max(1, Math.min(parallelism, (fileSize / (chunkMb*1024L*1024L))+1));
+        ExecutorService exec = Executors.newFixedThreadPool(chunks, r->{ Thread t=new Thread(r,"vlr-probe"); t.setDaemon(true); return t;});
         List<Future<?>> futures = new ArrayList<>();
         long chunkSize = fileSize / chunks;
         try (RandomAccessFile raf = new RandomAccessFile(vlrFile.toFile(), "r")) {
@@ -93,12 +125,10 @@ public class VlrProbeService {
                                     String cell = line.substring(0,comma);
                                     if (hashT.contains(cell)) {
                                         matched.incrementAndGet();
-                                        if (msisdnSink!=null) {
-                                            int c2 = line.indexOf(',', comma+1);
-                                            String msisdn = c2>0 ? line.substring(comma+1, c2) : line.substring(comma+1);
-                                            msisdnSink.accept(msisdn);
-                                            distinct.add(msisdn);
-                                        }
+                                        int c2 = line.indexOf(',', comma+1);
+                                        String msisdn = c2>0 ? line.substring(comma+1, c2) : line.substring(comma+1);
+                                        distinct.add(msisdn);
+                                        if (msisdnSink!=null) msisdnSink.accept(msisdn);
                                     }
                                 }
                             } else lineBuf.write(bb);

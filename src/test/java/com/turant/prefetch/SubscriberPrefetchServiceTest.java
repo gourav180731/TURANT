@@ -12,6 +12,7 @@ import java.nio.file.*;
 import java.time.Instant;
 import java.util.List;
 import java.util.zip.GZIPInputStream;
+import org.springframework.test.annotation.DirtiesContext;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -21,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @SpringBootTest
 @ActiveProfiles("test")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class SubscriberPrefetchServiceTest {
 
     @Autowired

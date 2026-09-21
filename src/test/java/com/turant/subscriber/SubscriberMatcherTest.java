@@ -4,6 +4,7 @@ import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.util.*;
@@ -18,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @SpringBootTest
 @ActiveProfiles("test")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class SubscriberMatcherTest {
 
     @Autowired
@@ -27,7 +29,6 @@ class SubscriberMatcherTest {
 
     @BeforeEach
     void setUp() {
-        // Clean all three tables
         try { jdbc.execute("DROP TABLE IF EXISTS turant_agg.cell_subscriber_agg"); } catch(Exception ignore){}
         try { jdbc.execute("DROP SCHEMA IF EXISTS turant_agg CASCADE"); } catch(Exception ignore){}
         jdbc.execute("CREATE SCHEMA IF NOT EXISTS turant_agg");
@@ -48,33 +49,24 @@ class SubscriberMatcherTest {
     @Test
     @Order(1)
     void primaryPathDumpOrAggHasDataReturnsCorrectCounts() {
-        // Seed agg (primary) with 3 cells, each with known counts
-        // Also seed dump with matching raw rows to test dump path if agg empty, but primary is agg
         jdbc.update("INSERT INTO turant_agg.cell_subscriber_agg (serving_cell_id, sub_count, distinct_count) VALUES (?,?,?)", "CELL-1", 10, 9);
         jdbc.update("INSERT INTO turant_agg.cell_subscriber_agg (serving_cell_id, sub_count, distinct_count) VALUES (?,?,?)", "CELL-2", 20, 18);
-        jdbc.update("INSERT INTO turant_agg.cell_subscriber_agg (serving_cell_id, sub_count, distinct_count) VALUES (?,?,?)", "CELL-3", 0, 0); // zero should not contribute
-        // Seed dump as well but agg is primary so counts should come from agg
+        jdbc.update("INSERT INTO turant_agg.cell_subscriber_agg (serving_cell_id, sub_count, distinct_count) VALUES (?,?,?)", "CELL-3", 0, 0);
         jdbc.update("INSERT INTO subscriber_dump (serving_cell_id, msisdn, imsi, technology) VALUES (?,?,?,?)", "CELL-1", "919000000001", "IMSI01", "5G");
         jdbc.update("INSERT INTO subscriber_dump (serving_cell_id, msisdn, imsi, technology) VALUES (?,?,?,?)", "CELL-1", "919000000002", "IMSI02", "5G");
 
         List<String> target = List.of("CELL-1","CELL-2","CELL-3","CELL-UNKNOWN");
 
         long[] res = svc.countAndDistinctByCellIds(target);
-        // agg: CELL-1 10 + CELL-2 20 + CELL-3 0 = 30 total, distinct 9+18=27 (CELL-UNKNOWN ignored)
         assertEquals(30, res[0], "total must be 30 from agg primary");
         assertEquals(27, res[1], "distinct must be 27");
-
-        // countByCellIds uses dump primary (not agg), so with 2 dump rows it returns 2, not agg 30
         assertEquals(2, svc.countByCellIds(target), "countByCellIds primary is dump (2 rows) not agg");
-
         assertEquals(2, svc.uniqueCountByCellIds(target), "uniqueCountByCellIds primary is dump distinct 2");
     }
 
     @Test
     @Order(2)
     void fallbackPathDumpEmptyStatsHasDataReturnsStatsSum() {
-        // Dump empty, stats and agg empty? Actually we test stats fallback via countByCellIds
-        // Clear dump and agg, populate only stats
         jdbc.execute("DELETE FROM turant_agg.cell_subscriber_agg");
         jdbc.execute("DELETE FROM subscriber_dump");
         jdbc.update("INSERT INTO cell_subscriber_stats (cell_id, subscriber_count, unique_subscriber_count) VALUES (?,?,?)", "CELL-FB-1", 100, 95);
@@ -82,10 +74,8 @@ class SubscriberMatcherTest {
 
         List<String> target = List.of("CELL-FB-1","CELL-FB-2");
 
-        // countByCellIds fallback: dump 0 -> stats 300
         assertEquals(300, svc.countByCellIds(target));
         assertEquals(275, svc.uniqueCountByCellIds(target));
-        // countAndDistinct primary agg is empty, will fallback to parallel dump (0) then stats -> 300/275
         long[] res = svc.countAndDistinctByCellIds(target);
         assertEquals(300, res[0]);
         assertEquals(275, res[1]);
@@ -104,7 +94,6 @@ class SubscriberMatcherTest {
         assertEquals(0, res[1]);
         assertEquals(0, svc.countByCellIds(target));
         assertEquals(0, svc.uniqueCountByCellIds(target));
-        // forEachMsisdn should stream 0
         long streamed = svc.forEachMsisdn(target, msisdn -> fail("should not be called"));
         assertEquals(0, streamed);
     }
@@ -112,31 +101,23 @@ class SubscriberMatcherTest {
     @Test
     @Order(4)
     void forEachMsisdnStreamsDistinctCorrectly() {
-        // Seed dump with distinct and duplicate cases
         jdbc.execute("DELETE FROM turant_agg.cell_subscriber_agg");
         jdbc.execute("DELETE FROM cell_subscriber_stats");
         jdbc.execute("DELETE FROM subscriber_dump");
-        // CELL-X has 3 distinct, CELL-Y has 2 distinct with one duplicate across cells
         jdbc.update("INSERT INTO subscriber_dump (serving_cell_id, msisdn, imsi, technology) VALUES (?,?,?,?)", "CELL-X", "919000000001", "IMSI01", "5G");
         jdbc.update("INSERT INTO subscriber_dump (serving_cell_id, msisdn, imsi, technology) VALUES (?,?,?,?)", "CELL-X", "919000000002", "IMSI02", "5G");
         jdbc.update("INSERT INTO subscriber_dump (serving_cell_id, msisdn, imsi, technology) VALUES (?,?,?,?)", "CELL-X", "919000000003", "IMSI03", "5G");
-        jdbc.update("INSERT INTO subscriber_dump (serving_cell_id, msisdn, imsi, technology) VALUES (?,?,?,?)", "CELL-Y", "919000000002", "IMSI02", "5G"); // duplicate 002
+        jdbc.update("INSERT INTO subscriber_dump (serving_cell_id, msisdn, imsi, technology) VALUES (?,?,?,?)", "CELL-Y", "919000000002", "IMSI02", "5G");
         jdbc.update("INSERT INTO subscriber_dump (serving_cell_id, msisdn, imsi, technology) VALUES (?,?,?,?)", "CELL-Y", "919000000004", "IMSI04", "5G");
 
         List<String> target = List.of("CELL-X","CELL-Y");
         Set<String> distinctCollected = ConcurrentHashMap.newKeySet();
         long streamedCount = svc.forEachMsisdn(target, distinctCollected::add);
-        // streamedCount is SELECT DISTINCT count = 4 distinct (001,002,003,004) — 002 deduped across cells
-        // But forEachMsisdn does SELECT DISTINCT msisdn WHERE serving_cell_id IN (...) -> 4 distinct
-        // However implementation counts per chunk distinct, but duplicates across chunks are deduped via Set if we use Set-backed sink.
-        // Here we use Set sink so streamed distinct = 4, but method's return is count of distinct rows streamed per chunk summed, which may double-count if duplicate across chunks is in same IN list? In this case both chunks in one IN, so 4.
         assertEquals(4, streamedCount, "forEachMsisdn SELECT DISTINCT should return 4 distinct");
         assertEquals(4, distinctCollected.size());
         assertTrue(distinctCollected.contains("919000000001"));
         assertTrue(distinctCollected.contains("919000000004"));
 
-        // Also verify countAndDistinct reports raw vs distinct correctly for this same data
-        // Since dump has data, countAndDistinct will prefer agg (empty) -> dump parallel -> COUNT(*) 5, COUNT(DISTINCT) 4
         long[] res = svc.countAndDistinctByCellIds(target);
         assertEquals(5, res[0], "total rows 5 (X 3 + Y 2)");
         assertEquals(4, res[1], "distinct 4 (002 duplicate)");

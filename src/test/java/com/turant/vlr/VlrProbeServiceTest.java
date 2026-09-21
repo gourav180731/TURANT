@@ -12,10 +12,12 @@ import java.io.*;
 import java.nio.file.*;
 import java.time.Instant;
 import java.util.*;
+import java.util.Arrays;
 import java.util.concurrent.ConcurrentHashMap;
 import java.lang.reflect.Field;
 import java.util.zip.GZIPOutputStream;
 import java.util.zip.GZIPInputStream;
+import org.springframework.test.annotation.DirtiesContext;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -27,6 +29,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @SpringBootTest
 @ActiveProfiles("test")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class VlrProbeServiceTest {
 
     @Autowired
@@ -79,7 +82,7 @@ class VlrProbeServiceTest {
         // CELL-A: 919000000001, 919000000002, 919000000005
         // CELL-B: 919000000003, 919000000001 (duplicate of A.001)
         // CELL-C: 919000000004 (unmatched when targeting A,B)
-        List<String[]> rows = List.of(
+        List<String[]> rows = Arrays.asList(
                 new String[]{"CELL-A","919000000001","IMSI01"},
                 new String[]{"CELL-A","919000000002","IMSI02"},
                 new String[]{"CELL-B","919000000003","IMSI03"},
@@ -118,7 +121,7 @@ class VlrProbeServiceTest {
     @Order(2)
     void emptyTargetSetReturnsEmptyMode() throws Exception {
         // Even with a file present, empty target should short-circuit
-        List<String[]> rows = List.of(new String[]{"CELL-A","919000000001","IMSI01"});
+        List<String[]> rows = java.util.Collections.singletonList(new String[]{"CELL-A","919000000001","IMSI01"});
         Instant fileTime = Instant.parse("2026-09-20T10:00:00Z");
         writeVlrGz(tempDir.resolve("prefetch"), "5G", rows, fileTime);
 
@@ -132,7 +135,7 @@ class VlrProbeServiceTest {
     @Test
     @Order(3)
     void noMatchingCellsReturnsZeroMatched() throws Exception {
-        List<String[]> rows = List.of(
+        List<String[]> rows = Arrays.asList(
                 new String[]{"CELL-A","919000000001","IMSI01"},
                 new String[]{"CELL-B","919000000002","IMSI02"}
         );
@@ -167,7 +170,7 @@ class VlrProbeServiceTest {
     @Order(5)
     void fileNotFoundDueToAlertTimeBeforeFileReturnsFallback() throws Exception {
         // File exists but alertTime is BEFORE file creation -> lastSnapshotBefore returns null -> fallback
-        List<String[]> rows = List.of(new String[]{"CELL-A","919000000001","IMSI01"});
+        List<String[]> rows = java.util.Collections.singletonList(new String[]{"CELL-A","919000000001","IMSI01"});
         Instant fileTime = Instant.parse("2026-09-20T12:00:00Z");
         writeVlrGz(tempDir.resolve("prefetch"), "5G", rows, fileTime);
 
@@ -195,7 +198,7 @@ class VlrProbeServiceTest {
     @Order(6)
     void deduplicationSameMsisdnAcrossTwoCellsCountsOnceInDistinct() throws Exception {
         // 4 rows: CELL-A and CELL-B both have same MSISDN 919000000099, plus other uniques
-        List<String[]> rows = List.of(
+        List<String[]> rows = Arrays.asList(
                 new String[]{"CELL-A","919000000099","IMSI99"},
                 new String[]{"CELL-B","919000000099","IMSI99"},
                 new String[]{"CELL-A","919000000001","IMSI01"},
@@ -213,7 +216,7 @@ class VlrProbeServiceTest {
     @Test
     @Order(7)
     void columnsInCorrectOrderServingCellMsisdnImsi() throws Exception {
-        List<String[]> rows = List.of(new String[]{"CELL-Z","919000000123","IMSI999"});
+        List<String[]> rows = java.util.Collections.singletonList(new String[]{"CELL-Z","919000000123","IMSI999"});
         Instant fileTime = Instant.parse("2026-09-20T10:00:00Z");
         Path file = writeVlrGz(tempDir.resolve("prefetch"), "5G", rows, fileTime);
         // Read raw gz and verify column order
