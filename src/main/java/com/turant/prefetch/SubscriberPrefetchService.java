@@ -103,13 +103,15 @@ public class SubscriberPrefetchService {
     public PrefetchSnapshot lastSnapshotBefore(String technology, Instant tAlert) {
         PrefetchSnapshot s = latest.get(technology);
         if (s != null && s.createdAt().isBefore(tAlert)) return s;
-        // Scan dir for latest < tAlert
+        // Scan dir for latest < tAlert — must filter by isBefore, otherwise future snapshots leak
         try {
             return Files.list(storageDir)
                     .filter(x -> x.getFileName().toString().contains(technology))
                     .map(x -> {
                         try { return new PrefetchSnapshot(technology, Files.getLastModifiedTime(x).toInstant(), -1, x, "-", Files.size(x), "csv.gz"); } catch (Exception e){ return null; }
-                    }).filter(Objects::nonNull).max(Comparator.comparing(PrefetchSnapshot::createdAt)).orElse(null);
+                    }).filter(Objects::nonNull)
+                    .filter(p -> p.createdAt().isBefore(tAlert))
+                    .max(Comparator.comparing(PrefetchSnapshot::createdAt)).orElse(null);
         } catch (Exception e){ return null; }
     }
 
