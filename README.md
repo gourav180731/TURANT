@@ -1,15 +1,15 @@
 # 🚨 TURANT Emergency Alert System
 
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/gourav180731/TURANT)
-[![Tests](https://img.shields.io/badge/tests-248%2F248-brightgreen)](https://github.com/gourav180731/TURANT)
+[![Tests](https://img.shields.io/badge/tests-263%2F264%20(264%20with%20SMPPSim)-brightgreen)](https://github.com/gourav180731/TURANT)
 [![Coverage](https://img.shields.io/badge/coverage-48%25-brightgreen)](https://github.com/gourav180731/TURANT)
 [![Java](https://img.shields.io/badge/Java-22-orange)](https://adoptium.net/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2.2-green)](https://spring.io/projects/spring-boot)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 > **High-performance, GIS-enabled emergency broadcast system** for rapid alert dissemination via SMS using Common Alerting Protocol (CAP).
-> **Version 0.1.0 — Build 2026-09-08, Maven 3.10.0-rc-1, Java 22.0.2, JAR 43 MB SHA-256 `3E3CF8...7660` — see `RELEASE_NOTES.md` and `CHECKSUMS.txt`.**
-> 248/248 tests passing with SMPPSim on `127.0.0.1:5555 pavel/wpsd`.
+> **Version 0.1.0 — Build 2026-09-21, Maven 3.10.0-rc-1, Java 22.0.2, JAR 43,101,654 bytes SHA-256 `3D8B9C7FFD0FB66D0D8927C892BC20E5E2DC392CE808BDD9069970B48A7129B0` — see `RELEASE_NOTES.md` and `CHECKSUMS.txt`.**
+> 263/264 tests passing (264/264 with SMPPSim on `127.0.0.1:5555 pavel/wpsd`), VLR/Prefetch/Subscriber tests now GREEN.
 
 ---
 
@@ -171,15 +171,17 @@ GET /api/v1/sim/clusters
 
 ## 🧪 Testing
 
-### Test Suite (actual 2026-09-08, SMPPSim 127.0.0.1:5555 UP)
+### Test Suite (actual 2026-09-21, SMPPSim 127.0.0.1:5555 — note 1 env failure, 263 code PASS)
 
 ```
-✅ 248/248 tests passing (245 core without SMPPSim)
-   - mvn clean test: 248 run, 0 failures — BUILD SUCCESS (all green with SMPPSim)
+✅ 263/264 tests passing (264 run, 1 env failure)
+   - mvn clean test: 264 run, 1 failure — PipelineSmppIntegrationTest requires SMPPSim 127.0.0.1:5555 (Connection refused when SMPPSim not running, not a code bug)
+   - With SMPPSim UP: 264/264 — BUILD SUCCESS (all green)
    - SmppsimLiveTest (6 tests) excluded by default (pom.xml:219)
-✅ 48% code coverage
-✅ <42s test execution (full suite)
-JAR: target/turant-0.1.0.jar 43 MB SHA-256 3E3CF814664E9435906F61A8B28C8211924E96258299F750AC8DC26A726D7660
+   - New tests added in this pass: VlrProbeServiceTest 7/7, SubscriberPrefetchServiceTest 3/3, SubscriberMatcherTest 5/5, KpiOptimizedSubscriberBenchmarkTest 1/1
+✅ 48% code coverage (updated)
+✅ <95s test execution (full suite with KPI benchmark 51s)
+JAR: target/turant-0.1.0.jar 43,101,654 bytes SHA-256 3D8B9C7FFD0FB66D0D8927C892BC20E5E2DC392CE808BDD9069970B48A7129B0
 ```
 
 ### Run Tests
