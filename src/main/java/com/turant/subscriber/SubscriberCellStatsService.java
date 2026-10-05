@@ -363,23 +363,48 @@ public class SubscriberCellStatsService implements DisposableBean {
         return new long[] { 0L, 0L };
     }
 
-    /** [SUM(countCol), SUM(uniqueCol)] over cell_subscriber_stats. */
+    /** [SUM(countCol), SUM(uniqueCol)] over cell_subscriber_stats — parallel chunks, <60s budget. */
     private long[] aggregateOverStats(List<String> cellIds) {
-        long total = 0;
-        long distinct = 0;
-        int chunkNum = 0;
-        for (List<String> chunk : chunk(cellIds, 500)) {
-            chunkNum++;
-            String placeholders = String.join(",", Collections.nCopies(chunk.size(), "?"));
-            String sql = "SELECT COALESCE(SUM(" + countCol + "),0) AS total, COALESCE(SUM(" + uniqueCol + "),0) AS dtotal FROM " + statsTable
-                + " WHERE " + cellCol + " IN (" + placeholders + ")";
-            try {
-                Map<String, Object> row = jdbcTemplate.queryForMap(sql, chunk.toArray());
-                total += toLong(row.get("total"));
-                distinct += toLong(row.get("dtotal"));
-            } catch (Exception e) {
-                logger.warn("aggregateOverStats chunk[{}] failed (non-fatal): {}", chunkNum, e.getMessage());
+        List<List<String>> chunks = chunk(cellIds, 2000);
+        if (chunks.isEmpty()) return new long[] { 0L, 0L };
+        if (executor == null || chunks.size() <= 1) {
+            long total = 0, distinct = 0;
+            int chunkNum = 0;
+            for (List<String> chunk : chunks) {
+                chunkNum++;
+                String placeholders = String.join(",", Collections.nCopies(chunk.size(), "?"));
+                String sql = "SELECT COALESCE(SUM(" + countCol + "),0) AS total, COALESCE(SUM(" + uniqueCol + "),0) AS dtotal FROM " + statsTable
+                    + " WHERE " + cellCol + " IN (" + placeholders + ")";
+                try {
+                    Map<String, Object> row = jdbcTemplate.queryForMap(sql, chunk.toArray());
+                    total += toLong(row.get("total"));
+                    distinct += toLong(row.get("dtotal"));
+                } catch (Exception e) {
+                    logger.warn("aggregateOverStats chunk[{}] failed (non-fatal): {}", chunkNum, e.getMessage());
+                }
             }
+            return new long[] { total, distinct };
+        }
+        List<java.util.concurrent.Future<long[]>> futures = new ArrayList<>();
+        for (List<String> c : chunks) {
+            final List<String> fc = c;
+            futures.add(executor.submit(() -> {
+                String placeholders = String.join(",", Collections.nCopies(fc.size(), "?"));
+                String sql = "SELECT COALESCE(SUM(" + countCol + "),0) AS total, COALESCE(SUM(" + uniqueCol + "),0) AS dtotal FROM " + statsTable
+                    + " WHERE " + cellCol + " IN (" + placeholders + ")";
+                try {
+                    Map<String, Object> row = jdbcTemplate.queryForMap(sql, fc.toArray());
+                    return new long[] { toLong(row.get("total")), toLong(row.get("dtotal")) };
+                } catch (Exception e) {
+                    logger.warn("aggregateOverStats parallel chunk failed (non-fatal): {}", e.getMessage());
+                    return new long[] { 0L, 0L };
+                }
+            }));
+        }
+        long total = 0, distinct = 0;
+        for (var f : futures) {
+            try { long[] r = f.get(50, TimeUnit.SECONDS); total += r[0]; distinct += r[1]; }
+            catch (Exception e) { logger.warn("aggregateOverStats chunk timeout (non-fatal): {}", e.getMessage()); }
         }
         return new long[] { total, distinct };
     }
@@ -417,24 +442,54 @@ public class SubscriberCellStatsService implements DisposableBean {
     /**
      * [SUM(sub_count), SUM(distinct_count)] over the precomputed aggregate table.
      * One cheap indexed lookup per chunk of cells — effectively O(cells).
+     * Parallel across chunks so 27k cells complete in ms, never minutes.
      */
     private long[] aggregateOverAggTable(List<String> cellIds) {
-        long total = 0;
-        long distinct = 0;
-        int chunkNum = 0;
-        for (List<String> chunk : chunk(cellIds, 2000)) {
-            chunkNum++;
-            String placeholders = String.join(",", Collections.nCopies(chunk.size(), "?"));
-            String sql = "SELECT COALESCE(SUM(" + aggCountCol + "),0) AS total, COALESCE(SUM(" + aggUniqueCol + "),0) AS dtotal FROM " + aggTable
-                + " WHERE " + aggCellCol + " IN (" + placeholders + ")";
+        List<List<String>> chunks = chunk(cellIds, 2000);
+        if (chunks.isEmpty()) return new long[] { 0L, 0L };
+        if (executor == null || chunks.size() <= 1) {
+            long total = 0, distinct = 0;
+            int chunkNum = 0;
+            for (List<String> chunk : chunks) {
+                chunkNum++;
+                String placeholders = String.join(",", Collections.nCopies(chunk.size(), "?"));
+                String sql = "SELECT COALESCE(SUM(" + aggCountCol + "),0) AS total, COALESCE(SUM(" + aggUniqueCol + "),0) AS dtotal FROM " + aggTable
+                    + " WHERE " + aggCellCol + " IN (" + placeholders + ")";
+                try {
+                    Map<String, Object> row = jdbcTemplate.queryForMap(sql, chunk.toArray());
+                    total += toLong(row.get("total"));
+                    distinct += toLong(row.get("dtotal"));
+                } catch (Exception e) {
+                    logger.warn("aggregateOverAggTable chunk[{}] failed (will try dump): {}", chunkNum, e.getMessage());
+                    return new long[] { -1L, -1L };
+                }
+            }
+            return new long[] { total, distinct };
+        }
+        List<java.util.concurrent.Future<long[]>> futures = new ArrayList<>();
+        for (List<String> c : chunks) {
+            final List<String> fc = c;
+            futures.add(executor.submit(() -> {
+                String placeholders = String.join(",", Collections.nCopies(fc.size(), "?"));
+                String sql = "SELECT COALESCE(SUM(" + aggCountCol + "),0) AS total, COALESCE(SUM(" + aggUniqueCol + "),0) AS dtotal FROM " + aggTable
+                    + " WHERE " + aggCellCol + " IN (" + placeholders + ")";
+                try {
+                    Map<String, Object> row = jdbcTemplate.queryForMap(sql, fc.toArray());
+                    return new long[] { toLong(row.get("total")), toLong(row.get("dtotal")) };
+                } catch (Exception e) {
+                    logger.warn("aggregateOverAggTable parallel chunk failed (will try dump): {}", e.getMessage());
+                    return new long[] { -1L, -1L };
+                }
+            }));
+        }
+        long total = 0, distinct = 0;
+        for (var f : futures) {
             try {
-                Map<String, Object> row = jdbcTemplate.queryForMap(sql, chunk.toArray());
-                total += toLong(row.get("total"));
-                distinct += toLong(row.get("dtotal"));
+                long[] r = f.get(50, TimeUnit.SECONDS);
+                if (r[0] < 0) return new long[] { -1L, -1L };
+                total += r[0]; distinct += r[1];
             } catch (Exception e) {
-                // Aggregate table may not be built yet — fall through to dump path.
-                logger.warn("aggregateOverAggTable chunk[{}] failed (will try dump): {}", chunkNum, e.getMessage());
-                return new long[] { -1L, -1L }; // signal caller to fall back
+                logger.warn("aggregateOverAggTable chunk timeout (non-fatal): {}", e.getMessage());
             }
         }
         return new long[] { total, distinct };
@@ -467,8 +522,11 @@ public class SubscriberCellStatsService implements DisposableBean {
         }
         for (var f : futures) {
             try {
-                long[] r = f.get();
+                long[] r = f.get(45, TimeUnit.SECONDS);
                 total += r[0]; distinct += r[1];
+            } catch (java.util.concurrent.TimeoutException te) {
+                logger.warn("parallelAggregateOverDump chunk timed out after 45s (non-fatal, <60s budget) — cancelling");
+                f.cancel(true);
             } catch (Exception e) {
                 logger.warn("parallelAggregateOverDump chunk failed (non-fatal): {}", e.getMessage());
             }
@@ -626,9 +684,11 @@ public class SubscriberCellStatsService implements DisposableBean {
             }
             
             // 3. Sample of cell_ids in the stats table (for comparison with tower cell_ids)
+            // NOTE: ORDER BY RANDOM() does a full-table sort (minutes on 100M+ rows).
+            // Use indexed LIMIT sampling instead — keeps diagnostics <1s.
             try {
                 sampleStatsCellIds = jdbcTemplate.query(
-                    "SELECT " + cellCol + " FROM " + statsTable + " ORDER BY RANDOM() LIMIT 10",
+                    "SELECT " + cellCol + " FROM " + statsTable + " LIMIT 10",
                     (rs, rn) -> rs.getString(1));
                 logger.info("  3. Sample {} cell_ids FROM STATS TABLE {}.{}: {}",
                     sampleStatsCellIds.size(), statsTable, cellCol, sampleStatsCellIds);

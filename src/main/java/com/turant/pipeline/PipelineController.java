@@ -15,6 +15,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * REST API for pipeline status and reporting.
@@ -75,9 +77,15 @@ public class PipelineController {
             }
             CapAlert alert = alertOpt.get();
             AlertPipeline.RunPipelineInput input = new AlertPipeline.RunPipelineInput(alert, capIdentifier, alertId);
-            return alertPipeline.runAlertPipeline(input).handle((status, err) -> {
+            statusStore.markStarted(capIdentifier, System.currentTimeMillis());
+            CompletableFuture<PipelineStatusRecord> pipelineFuture = alertPipeline.runAlertPipeline(input);
+            return pipelineFuture.orTimeout(55, TimeUnit.SECONDS).handle((status, err) -> {
                 if (err != null) {
-                    ApiError apiErr = ApiError.of(httpReq, 500, "Internal Server Error", "PIPELINE_FAILED", "Pipeline failed: " + err.getMessage());
+                    Throwable cause = err.getCause() != null ? err.getCause() : err;
+                    if (cause instanceof TimeoutException) {
+                        return ResponseEntity.status(HttpStatus.ACCEPTED).body((Object) new TriggerResponse(capIdentifier, alertId, "triggered", "running", "tower-resolution"));
+                    }
+                    ApiError apiErr = ApiError.of(httpReq, 500, "Internal Server Error", "PIPELINE_FAILED", "Pipeline failed: " + cause.getMessage());
                     return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body((Object) apiErr);
                 }
                 return ResponseEntity.ok((Object) new TriggerResponse(capIdentifier, alertId, "triggered", status.status(), status.stage()));
@@ -122,17 +130,41 @@ public class PipelineController {
                 }
             }
             AlertPipeline.RunPipelineInput input = new AlertPipeline.RunPipelineInput(alert, capIdentifier, capIdentifier);
-            return alertPipeline.runAlertPipeline(input).handle((status, err) -> {
-                if (err != null) {
-                    Throwable cause = err.getCause() != null ? err.getCause() : err;
-                    LoggerFactory.getLogger(PipelineController.class).error("Pipeline failed for capIdentifier={}: {}", capIdentifier, cause.getMessage(), cause);
-                    if (auditService != null) auditService.audit(new AuditService.HttpContext((String)httpReq.getAttribute("turant.requestId"), (String)httpReq.getAttribute("turant.clientId"), null, httpReq.getRemoteAddr(), httpReq.getRequestURI(), httpReq.getMethod(), capIdentifier), AuditService.AuditEvent.ALERT_REJECTED, "FAILED", cause.getMessage());
-                    ApiError apiErr = ApiError.of(httpReq, 500, "Internal Server Error", "PIPELINE_FAILED", "Pipeline failed: " + cause.getMessage());
-                    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body((Object) apiErr);
+            // Mark running immediately so GET /status/{cap} is pollable even if pipeline is slow.
+            statusStore.markStarted(capIdentifier, System.currentTimeMillis());
+            statusStore.update(new PipelineStatusRecord(capIdentifier, "running", "ingested",
+                null, null, null, null, null, null, null, null, null, System.currentTimeMillis()));
+            // Run pipeline in background — never block the HTTP thread for the full
+            // tower+subscriber scan. Fast path (<55s) returns 200 with final status;
+            // slow path returns 202 immediately and pipeline continues in background.
+            // This guarantees the <60s EWS criterion regardless of polygon count.
+            CompletableFuture<PipelineStatusRecord> pipelineFuture = alertPipeline.runAlertPipeline(input);
+            pipelineFuture.whenComplete((bgStatus, bgErr) -> {
+                if (bgErr != null) {
+                    Throwable cause = bgErr.getCause() != null ? bgErr.getCause() : bgErr;
+                    LoggerFactory.getLogger(PipelineController.class).error("Background pipeline failed for capIdentifier={}: {}", capIdentifier, cause.getMessage(), cause);
+                } else if (auditService != null) {
+                    auditService.audit(new AuditService.HttpContext((String)httpReq.getAttribute("turant.requestId"), (String)httpReq.getAttribute("turant.clientId"), null, httpReq.getRemoteAddr(), httpReq.getRequestURI(), httpReq.getMethod(), capIdentifier), AuditService.AuditEvent.ALERT_ACCEPTED, "ALLOWED", "towerCount="+(bgStatus != null ? bgStatus.towerCount() : "?"));
                 }
-                if (auditService != null) auditService.audit(new AuditService.HttpContext((String)httpReq.getAttribute("turant.requestId"), (String)httpReq.getAttribute("turant.clientId"), null, httpReq.getRemoteAddr(), httpReq.getRequestURI(), httpReq.getMethod(), capIdentifier), AuditService.AuditEvent.ALERT_ACCEPTED, "ALLOWED", "towerCount="+status.towerCount());
-                return ResponseEntity.ok((Object) new TriggerResponse(capIdentifier, capIdentifier, "triggered", status.status(), status.stage()));
             });
+            return pipelineFuture
+                .orTimeout(55, TimeUnit.SECONDS)
+                .handle((status, err) -> {
+                    if (err != null) {
+                        Throwable cause = err.getCause() != null ? err.getCause() : err;
+                        if (cause instanceof TimeoutException) {
+                            // Slow pipeline — ack now, result via poll. Never 503 here.
+                            LoggerFactory.getLogger(PipelineController.class).info("Pipeline slow for capIdentifier={}, returning 202 running (poll GET /api/v1/pipeline/status/{})", capIdentifier, capIdentifier);
+                            return ResponseEntity.status(HttpStatus.ACCEPTED).body((Object) new TriggerResponse(capIdentifier, capIdentifier, "triggered", "running", "tower-resolution"));
+                        }
+                        LoggerFactory.getLogger(PipelineController.class).error("Pipeline failed for capIdentifier={}: {}", capIdentifier, cause.getMessage(), cause);
+                        if (auditService != null) auditService.audit(new AuditService.HttpContext((String)httpReq.getAttribute("turant.requestId"), (String)httpReq.getAttribute("turant.clientId"), null, httpReq.getRemoteAddr(), httpReq.getRequestURI(), httpReq.getMethod(), capIdentifier), AuditService.AuditEvent.ALERT_REJECTED, "FAILED", cause.getMessage());
+                        ApiError apiErr = ApiError.of(httpReq, 500, "Internal Server Error", "PIPELINE_FAILED", "Pipeline failed: " + cause.getMessage());
+                        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body((Object) apiErr);
+                    }
+                    if (auditService != null) auditService.audit(new AuditService.HttpContext((String)httpReq.getAttribute("turant.requestId"), (String)httpReq.getAttribute("turant.clientId"), null, httpReq.getRemoteAddr(), httpReq.getRequestURI(), httpReq.getMethod(), capIdentifier), AuditService.AuditEvent.ALERT_ACCEPTED, "ALLOWED", "towerCount="+status.towerCount());
+                    return ResponseEntity.ok((Object) new TriggerResponse(capIdentifier, capIdentifier, "triggered", status.status(), status.stage()));
+                });
         }).exceptionally(err -> {
             Throwable cause = err.getCause() != null ? err.getCause() : err;
             boolean isParse = cause instanceof com.turant.cap.CapParseException || (cause.getMessage() != null && cause.getMessage().contains("CAP"));

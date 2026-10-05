@@ -21,7 +21,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleAsyncTimeout(AsyncRequestTimeoutException ex, HttpServletRequest req) {
         logger.error("Async timeout: {}", ex.getMessage(), ex);
         ApiError body = ApiError.of(req, 503, "Service Unavailable", "PIPELINE_TIMEOUT",
-                "Pipeline exceeded async timeout (300s) — retry or reduce polygon count. " + ex.getMessage());
+                "Pipeline exceeded async timeout — poll GET /api/v1/pipeline/status/{capIdentifier} for background result or reduce polygon count. " + ex.getMessage());
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
     }
 

@@ -76,6 +76,8 @@ public class AlertPipeline {
     private final EwsService ewsService;
     private final CapParser capParser;
     private final ReportBuilder reportBuilder;
+    // Batch-staging subscriber source (optional — falls back to chunked scan)
+    private final com.turant.subscriber.GeoSubscriberTargetingService geoTargeting;
 
     @Autowired
     public AlertPipeline(
@@ -95,7 +97,8 @@ public class AlertPipeline {
             @Autowired(required=false) EwsCallback ewsCallback,
             @Autowired(required=false) EwsService ewsService,
             @Autowired(required=false) CapParser capParser,
-            @Autowired(required=false) ReportBuilder reportBuilder) {
+            @Autowired(required=false) ReportBuilder reportBuilder,
+            @Autowired(required=false) com.turant.subscriber.GeoSubscriberTargetingService geoTargeting) {
         this.towerResolver = towerResolver;
         this.deduplicator = deduplicator;
         this.orchestrator = orchestrator;
@@ -113,6 +116,7 @@ public class AlertPipeline {
         this.ewsService = ewsService;
         this.capParser = capParser;
         this.reportBuilder = reportBuilder;
+        this.geoTargeting = geoTargeting;
         logger.info("AlertPipeline initialized: 14 activities wired (prefetch={}, vlr={}, smsc={}, expiry, validity, priority, delivery, dlr, ews={})", prefetchService!=null, vlrProbeService!=null, batchSmscService!=null, ewsService!=null?"ewsService":(ewsCallback!=null?"ewsCallback":"none"));
     }
     
@@ -354,20 +358,36 @@ public class AlertPipeline {
             var snaps = prefetchService.latestAll();
             logger.info("Activity2 Prefetch: tech snapshots={} (12h refresh, near-real-time live probe feasible={})", snaps.keySet(), prefetchService.isLiveProbeFeasible());
         }
-        // Activity 3 optimal: DB aggregate O(k) is primary (34ms for 50k), VLR hash probe is secondary when file exists
-        long[] subCounts = cellStats.countAndDistinctByCellIds(cellIds);
-        String probeMode = "db-aggregate";
-        // VLR probe is available as alternative for dynamic 10cr scattered VLR file (hash O(N+k) <60s)
-        if (vlrProbeService != null && cellIds.size() >= 10000) {
+        // Activity 3 optimal: single bulk staging query (GeoTargeting, O(cells))
+        // is primary — one round-trip for 50k cells instead of 55 chunked IN queries.
+        // Chunked cellStats path is fallback only. VLR file probe is NEVER run
+        // synchronously here (it scans a multi-GB file and would blow the <60s
+        // budget); it remains available via its own service for offline use.
+        long totalSubscribers;
+        long uniqueSubscribers;
+        String probeMode;
+        if (geoTargeting != null && !towers.isEmpty()) {
             try {
-                var vlrRes = vlrProbeService.probeByVlrFile(new java.util.HashSet<>(cellIds), Instant.now(), null);
-                if (vlrRes != null && vlrRes.matchedRows()>=0 && !"fallback-db".equals(vlrRes.probeMode())) {
-                    logger.info("Activity3 VLR hash probe available: mode={} matched={} distinct={} elapsedMs={} (using DB aggregate for count)", vlrRes.probeMode(), vlrRes.matchedRows(), vlrRes.distinctMsisdn(), vlrRes.elapsedMs());
-                }
-            } catch (Exception e) { logger.debug("VLR probe check", e); }
+                var summary = geoTargeting.identifySummaries(towers);
+                totalSubscribers = summary.cellPathRows();
+                uniqueSubscribers = summary.cellPathDistinct();
+                probeMode = "geo-batch-agg";
+                logger.info("Activity3 GeoTarget batch: staged={} cells={} rows={} distinct={} loadMs={} queryMs={}",
+                    summary.towersStaged(), summary.cellPathCells(), totalSubscribers, uniqueSubscribers,
+                    summary.loadMs(), summary.queryMs());
+            } catch (Exception e) {
+                logger.warn("Activity3 GeoTarget batch failed, falling back to chunked agg: {}", e.getMessage());
+                long[] subCounts = cellStats.countAndDistinctByCellIds(cellIds);
+                totalSubscribers = subCounts[0];
+                uniqueSubscribers = subCounts[1];
+                probeMode = "db-aggregate-fallback";
+            }
+        } else {
+            long[] subCounts = cellStats.countAndDistinctByCellIds(cellIds);
+            totalSubscribers = subCounts[0];
+            uniqueSubscribers = subCounts[1];
+            probeMode = "db-aggregate";
         }
-        long totalSubscribers = subCounts[0];       // matchedCount basis
-        long uniqueSubscribers = subCounts[1];      // expectedRecipients basis
         long subscriberQueryElapsed = System.currentTimeMillis() - subscriberQueryStart;
 
         int matched = toInt(totalSubscribers);
@@ -442,13 +462,15 @@ public class AlertPipeline {
                         int batchSize = 1000;
                         List<com.turant.types.sms.SmsMessage> currentBatch = new ArrayList<>();
                         List<java.util.concurrent.CompletableFuture<List<com.turant.types.sms.SubmissionResult>>> futures = new ArrayList<>();
-                        // Use forEachMsisdn streaming API (preferred, DISTINCT, parallel)
+                        // MSISDN source selection (message construction and submission
+                        // below are identical for both sources):
+                        //  - GeoSubscriberTargetingService batch path when available:
+                        //    one staging load + cursor DISTINCT stream, no 500-chunk
+                        //    IN loop, bounded memory.
+                        //  - Legacy chunked SubscriberCellStatsService scan otherwise.
                         long streamedCount = 0;
-                        if (cellStats != null) {
-                            // For small deterministic tests, collect via forEachMsisdn with batch flush
-                            // For large scale, this streams without materializing all 10cr
-                            java.util.concurrent.atomic.AtomicLong streamed = new java.util.concurrent.atomic.AtomicLong(0);
-                            cellStats.forEachMsisdn(cellIds, msisdn -> {
+                        java.util.concurrent.atomic.AtomicLong streamed = new java.util.concurrent.atomic.AtomicLong(0);
+                        java.util.function.Consumer<String> msisdnSink = msisdn -> {
                                 // Each msisdn is DISTINCT already from SELECT DISTINCT; extra dedup via MsisdnDeduplicator is covered by distinct set
                                 com.turant.types.sms.SmsMessage msg = new com.turant.types.sms.SmsMessage(
                                         java.util.UUID.randomUUID().toString(),
@@ -477,8 +499,18 @@ public class AlertPipeline {
                                     }
                                 }
                                 streamed.incrementAndGet();
-                            });
-                            streamedCount = streamed.get();
+                            };
+                            if (geoTargeting != null) {
+                                logger.info("SMPP submit streaming via GeoSubscriberTargetingService batch path (towers={})", towers.size());
+                                streamedCount = geoTargeting.streamUniqueMsisdns(towers, msisdnSink);
+                            } else if (cellStats != null) {
+                                // For small deterministic tests, collect via forEachMsisdn with batch flush
+                                // For large scale, this streams without materializing all 10cr
+                                cellStats.forEachMsisdn(cellIds, msisdnSink);
+                                streamedCount = streamed.get();
+                            } else {
+                                logger.warn("SMPP submit skipped: no subscriber stream source available");
+                            }
                             // Flush remainder
                             synchronized (currentBatch) {
                                 if (!currentBatch.isEmpty()) {
@@ -499,9 +531,6 @@ public class AlertPipeline {
                             if (streamedCount == 0) {
                                 logger.warn("SMPP submit: expectedRecipients={} but streamed 0 DISTINCT MSISDNs from subscriber_dump — authoritative source has no matching rows for these cellIds", expectedRecipients);
                             }
-                        } else {
-                            logger.warn("SMPP submit skipped: SubscriberCellStatsService not available");
-                        }
                         // Await all batch submissions and aggregate actual results (no fabrication)
                         long totalSubmitted = 0;
                         long totalAccepted = 0;

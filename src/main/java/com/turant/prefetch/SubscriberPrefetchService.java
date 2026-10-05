@@ -78,14 +78,34 @@ public class SubscriberPrefetchService {
     }
 
     private long streamTechToFile(String tech, PrintWriter pw) {
-        long[] cnt = {0};
+        // SCALE FIX (2026-09-28, office-laptop 100M validation): stream via a
+        // server-side cursor (fetchSize + autoCommit=false). The previous
+        // JdbcTemplate.query(...) buffering materialized all N rows in heap
+        // and OOM-killed the JVM on the 68M-row 5G partition. Same query,
+        // same file format — only the read path is cursor-based now.
+        long count = 0;
         String q = String.format("SELECT serving_cell_id, msisdn, imsi FROM %s WHERE technology='%s' AND serving_cell_id IS NOT NULL", dumpTable, tech);
-        jdbc.query(q, (rs) -> {
-            pw.println(rs.getString(1)+","+rs.getString(2)+","+rs.getString(3));
-            cnt[0]++;
-        });
+        try (java.sql.Connection con = jdbc.getDataSource().getConnection()) {
+            boolean prevAutoCommit = con.getAutoCommit();
+            con.setAutoCommit(false);
+            try (java.sql.PreparedStatement ps = con.prepareStatement(
+                    q, java.sql.ResultSet.TYPE_FORWARD_ONLY, java.sql.ResultSet.CONCUR_READ_ONLY)) {
+                ps.setFetchSize(5000);
+                try (java.sql.ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        pw.println(rs.getString(1)+","+rs.getString(2)+","+rs.getString(3));
+                        count++;
+                    }
+                }
+            } finally {
+                con.setAutoCommit(prevAutoCommit);
+            }
+        } catch (Exception e) {
+            log.error("streamTechToFile tech={} failed after {} rows", tech, count, e);
+            throw new RuntimeException(e);
+        }
         pw.flush();
-        return cnt[0];
+        return count;
     }
 
     private void ensureStagingTable(String tech) {

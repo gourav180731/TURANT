@@ -47,6 +47,13 @@ public class SmppClient {
     
     private SMPPSession session;
     private boolean closedByUs = false;
+    /**
+     * In-flight (or last failed) bind future. Concurrent submitBatch calls
+     * must SHARE one bind instead of opening a connection storm (218
+     * parallel binds tripped the SMSC connection limit and all but one batch
+     * failed with "Connection refused"). Guarded by the synchronized connect().
+     */
+    private volatile CompletableFuture<Void> connectFuture;
     private final ExecutorService executor;
     private final DlrListener dlrListener;
     
@@ -127,42 +134,47 @@ public class SmppClient {
         if (session != null && session.getSessionState().isBound()) {
             return CompletableFuture.completedFuture(null);
         }
-        
-        return CompletableFuture.supplyAsync(() -> {
-            try {
-                logger.info("Connecting to SMSC: host={}, port={}", smppHost, smppPort);
-                
-                session = new SMPPSession();
-                session.setEnquireLinkTimer((int) (enquireLinkPeriodMs / 1000));
-                session.setTransactionTimer(submitTimeoutMs);
-                // Wire DLR listener to every new session (reconnect preserves correlation)
-                if (dlrListener != null) {
-                    session.setMessageReceiverListener(createDlrMessageReceiverListener());
-                    logger.debug("DLR MessageReceiverListener registered on SMPPSession");
-                } else {
-                    logger.debug("No DlrListener available — deliver_sm will not be correlated");
+        // Share an in-flight bind; start a new one only if none is running
+        // or the last attempt failed.
+        if (connectFuture == null || connectFuture.isCompletedExceptionally()) {
+            connectFuture = CompletableFuture.supplyAsync(() -> {
+                try {
+                    logger.info("Connecting to SMSC: host={}, port={}", smppHost, smppPort);
+
+                    SMPPSession fresh = new SMPPSession();
+                    fresh.setEnquireLinkTimer((int) (enquireLinkPeriodMs / 1000));
+                    fresh.setTransactionTimer(submitTimeoutMs);
+                    // Wire DLR listener to every new session (reconnect preserves correlation)
+                    if (dlrListener != null) {
+                        fresh.setMessageReceiverListener(createDlrMessageReceiverListener());
+                        logger.debug("DLR MessageReceiverListener registered on SMPPSession");
+                    } else {
+                        logger.debug("No DlrListener available — deliver_sm will not be correlated");
+                    }
+
+                    BindParameter bindParam = new BindParameter(
+                        BindType.BIND_TRX, // Use transceiver by default
+                        systemId,
+                        password,
+                        systemType,
+                        TypeOfNumber.valueOf(srcAddrTon),
+                        NumberingPlanIndicator.valueOf(srcAddrNpi),
+                        null
+                    );
+
+                    fresh.connectAndBind(smppHost, smppPort, bindParam);
+                    session = fresh;
+
+                    logger.info("SMPP session bound successfully");
+                    return null;
+
+                } catch (IOException e) {
+                    logger.error("Failed to connect/bind to SMSC", e);
+                    throw new RuntimeException("SMPP connection failed", e);
                 }
-                
-                BindParameter bindParam = new BindParameter(
-                    BindType.BIND_TRX, // Use transceiver by default
-                    systemId,
-                    password,
-                    systemType,
-                    TypeOfNumber.valueOf(srcAddrTon),
-                    NumberingPlanIndicator.valueOf(srcAddrNpi),
-                    null
-                );
-                
-                session.connectAndBind(smppHost, smppPort, bindParam);
-                
-                logger.info("SMPP session bound successfully");
-                return null;
-                
-            } catch (IOException e) {
-                logger.error("Failed to connect/bind to SMSC", e);
-                throw new RuntimeException("SMPP connection failed", e);
-            }
-        }, executor);
+            }, executor);
+        }
+        return connectFuture;
     }
     
     /**
@@ -209,6 +221,7 @@ public class SmppClient {
      */
     public void close() {
         closedByUs = true;
+        connectFuture = null;
         if (session != null) {
             session.unbindAndClose();
             session = null;
